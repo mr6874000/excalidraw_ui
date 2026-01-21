@@ -1,6 +1,6 @@
 # Excalidraw UI
 
-This application provides a web-based interface for Excalidraw.
+This is a self-contained web application that provides a full Excalidraw interface, allowing users to create, edit, and store all their drawings and progress directly into a local SQLite database.
 
 ## Technology Stack
 
@@ -11,7 +11,7 @@ This application provides a web-based interface for Excalidraw.
 
 ## Data Storage & Architecture
 
-The application uses **SQLite** for data persistence.
+The application is designed to be completely self-contained, using **SQLite** as the single source of truth for all data persistence. This ensures that all your drawings, settings, and progress are stored locally and securely.
 
 *   **Schema-Agnostic Design**: The database models (`Excalidraw` and `Instance`) utilize a `JSON` column (`data`) to store the majority of their attributes. This allows for a flexible, schema-less approach where new fields can be added without migration headaches, ensuring forward and backward compatibility.
 *   **File Storage**: Excalidraw drawings and metadata are stored within the `data/` directory.
