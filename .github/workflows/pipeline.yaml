@@ -98,7 +98,7 @@ jobs:
 
       # Upload the generated docker-compose.yaml as an artifact
       - name: Upload docker-compose artifact
-        uses: actions/upload-artifact@v3 
+        uses: actions/upload-artifact@v4 
         with:
           name: docker-compose-${{ env.IMAGE_NAME }}
           path: docker-compose.yaml
