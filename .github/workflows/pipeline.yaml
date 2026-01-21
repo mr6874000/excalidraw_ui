@@ -1,152 +1,56 @@
-name: Deploy to Truenas 112
-run-name: ${{ github.actor }} is testing out Gitea Actions 🚀
+name: Build and Push to GHCR
+run-name: ${{ github.actor }} is building for GHCR 🚀
 on:
   push:
   workflow_dispatch:
 
 env:
-  DOCKER_LOCAL_HOST: 10.25.0.98:15050
-  MQTT_BROKER: 10.25.0.112
-  IS_DEV_BRANCH: "false"
-  TRUENAS_DEPLOY: "true"
-  DOCKER_DEPLOY: "false"
-  APP_PORT: 9095
+  # 1. CHANGE THIS to your GitHub Username (lowercase)
+  GHCR_OWNER: your_github_username_here 
+  REGISTRY: ghcr.io
 
 jobs:
-  Explore-Gitea-Actions:
+  build-and-push:
     runs-on: ubuntu-latest
     steps:
-      - run: echo "🎉 The job was automatically triggered by a ${{ github.event_name }} event."
-      - run: echo "🐧 This job is now running on a ${{ runner.os }} server hosted by Gitea!"
-      - run: echo "🔎 The name of your branch is ${{ github.ref }} and your repository is ${{ github.repository }}."
-
-      # Step to sanitize the repository name
-      - name: Sanitize Repository Name
-        id: sanitize_repo_name
-        run: |
-          REPO_FULL_NAME="${{ github.repository }}"
-          
-          # Extract only the repository name
-          REPO_NAME=$(echo "$REPO_FULL_NAME" | awk -F/ '{print $2}')
-          
-          # Sanitize the repository name
-          SANITIZED_NAME=$(echo "$REPO_NAME" | tr -cd '[:alnum:]' | tr '[:upper:]' '[:lower:]')
-          
-          echo "Original Repository Name: $REPO_NAME"
-          echo "Sanitized Repository Name: $SANITIZED_NAME"
-          
-          # Modern way to set output
-          echo "sanitized_name=$SANITIZED_NAME" >> $GITHUB_OUTPUT
-
-      # Set environment variables dynamically based on sanitized name
-      - name: Set Environment Variables
-        run: |
-          echo "IMAGE_NAME=${{ steps.sanitize_repo_name.outputs.sanitized_name }}" >> $GITHUB_ENV
-          echo "DEPLOYMENT_NAME=${{ steps.sanitize_repo_name.outputs.sanitized_name }}" >> $GITHUB_ENV
-
-      # Install Node.js (if required)
-      - name: Install Node.js
-        run: |
-          sudo apt update
-          sudo apt install -y nodejs npm
-
-      # Check out the repository code
       - name: Check out Repository Code
         uses: actions/checkout@v4
 
-      # Set up Python environment
-      - name: Set up Python 3 and Install Dependencies
-        run: |
-          python3 -m venv venv
-          source venv/bin/activate
-          pip install --upgrade pip requests paramiko
-
-      # Prune unused Docker images
-      - name: Prune Unused Docker Images
-        run: |
-          echo "🔍 Cleaning up unused Docker images..."
-          docker image prune -af --filter "until=24h"
-          echo "🗑️ Old Docker images cleaned up successfully!"
-
-      - name: Build, Tag & Push Docker Image with .version
-        run: |
-          echo "🔧 Preparing .version file..."
-          
-          # Extract branch name (remove refs/heads/)
-          BRANCH_NAME=$(echo "${{ github.ref }}" | sed 's|refs/heads/||')
-          
-          # Build version string
-          VERSION="$BRANCH_NAME-${{ github.run_number }}"
-
-          # Write to .version file
-          echo "$VERSION" > .version
-          echo "Generated version: $VERSION"
-          
-          echo "📦 Building Docker image..."
-          docker build -t $DOCKER_LOCAL_HOST/${{ env.IMAGE_NAME }}:latest .
-
-          echo "📤 Pushing Docker image to $DOCKER_LOCAL_HOST..."
-          docker push $DOCKER_LOCAL_HOST/${{ env.IMAGE_NAME }}:latest
-
-          echo "✅ Docker image pushed with version $VERSION"
-
-      # Generate docker-compose.yaml file
-      - name: Generate docker-compose.yaml
-        run: |
-          source venv/bin/activate
-          python3 .github..scripts/create_docker_compose.py --app "${{ env.IMAGE_NAME }}" --host-port "${{ env.APP_PORT }}"
-
-      # Upload the generated docker-compose.yaml as an artifact
-      - name: Upload docker-compose artifact
-        uses: actions/upload-artifact@v4 
+      # Log in to GitHub Container Registry
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
         with:
-          name: docker-compose-${{ env.IMAGE_NAME }}
-          path: docker-compose.yaml
+          registry: ${{ env.REGISTRY }}
+          username: ${{ env.GHCR_OWNER }}
+          password: ${{ secrets.GH_PAT }}
 
-      # Check Docker Registry for Image
-      - name: Check Docker Registry for Image
-        env:
-          REGISTRY: ${{ env.DOCKER_LOCAL_HOST }}
-          IMAGE: ${{ env.IMAGE_NAME }}
+      - name: Sanitize Repository Name
+        id: sanitize
         run: |
-          if ! command -v jq >/dev/null 2>&1; then
-            sudo apt-get update && sudo apt-get install -y jq
-          fi
+          # GHCR requires lowercase names
+          REPO_NAME=$(echo "${{ github.repository }}" | awk -F/ '{print $2}' | tr '[:upper:]' '[:lower:]')
+          echo "repo_name=$REPO_NAME" >> $GITHUB_OUTPUT
 
-          response=$(curl -sf "http://$REGISTRY/v2/_catalog")
-          echo "$response" | jq .
-
-          if echo "$response" | jq -e --arg image "$IMAGE" '.repositories | index($image)' > /dev/null; then
-            echo "{ \"repositories\": [\"$IMAGE\"] }"
-          else
-            echo "Error: '$IMAGE' repository not found in registry catalog at $REGISTRY"
-            exit 1
-          fi
-
-      # Redeploy on TrueNAS
-      - name: Redeploy on TrueNAS
-        if: ${{ env.TRUENAS_DEPLOY == 'true' && env.IS_DEV_BRANCH == 'false' }}
+      - name: Build and Push Image
         run: |
-          curl http://10.25.0.112:8100/api/truenas/redeploy/${{ env.DEPLOYMENT_NAME }}
-          curl http://10.25.0.112:8100/api/truenas/redeploy/${{ env.DEPLOYMENT_NAME }}?host_override=10.25.0.98
+          # Extract branch and versioning
+          BRANCH_NAME=$(echo "${{ github.ref }}" | sed 's|refs/heads/||' | tr '[:upper:]' '[:lower:]')
+          VERSION="$BRANCH_NAME-${{ github.run_number }}"
+          
+          # Full Image Path: ghcr.io/owner/repository
+          IMAGE_PATH="${{ env.REGISTRY }}/${{ env.GHCR_OWNER }}/${{ steps.sanitize.outputs.repo_name }}"
+          
+          echo "📦 Building image: $IMAGE_PATH"
+          
+          # Build and Tag
+          docker build -t $IMAGE_PATH:latest -t $IMAGE_PATH:$VERSION .
+          
+          echo "📤 Pushing to GitHub Container Registry..."
+          docker push $IMAGE_PATH:latest
+          docker push $IMAGE_PATH:$VERSION
+          
+          # Save for next steps if needed
+          echo "FINAL_IMAGE=$IMAGE_PATH:$VERSION" >> $GITHUB_ENV
 
-      # Redeploy on Docker
-      - name: Redeploy on Docker
-        if: ${{ env.DOCKER_DEPLOY == 'true' && env.IS_DEV_BRANCH == 'false' }}
-        run: |
-          set -e
-          source venv/bin/activate
-          if ! python3 .github..scripts/docker.py; then
-            echo "❌ Deployment script failed!"
-            exit 1
-          fi
-
-      # Print the final job status
-      - run: echo "🍏 This job's status is ${{ job.status }}."
-
-      # Send notification via Python script
-      - name: Send notification to Gotify
-        if: always()
-        run: |
-          source venv/bin/activate
-          python3 .github..scripts/notify.py "${{ github.ref }}" "${{ job.status }}" "${{ env.IMAGE_NAME }}"
+      - name: Final Status
+        run: echo "🍏 Successfully pushed ${{ env.FINAL_IMAGE }} to GHCR."
