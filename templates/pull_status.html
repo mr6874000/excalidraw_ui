@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container text-center" style="max-width: 600px;">
+    
+    <h2 id="status-header" class="mb-3">Pull in Progress...</h2>
+
+    <div id="status-icon-container" class="mb-3">
+        <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+    </div>
+
+    <p class="lead" id="status-message">Initializing...</p>
+    
+    <div id="result-container" class="d-none mt-4">
+        <a href="{{ url_for('index') }}" class="btn btn-primary">
+            <i class="fas fa-home"></i> Go to Homepage
+        </a>
+    </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const statusHeader = document.getElementById('status-header');
+        const iconContainer = document.getElementById('status-icon-container');
+        const statusMessage = document.getElementById('status-message');
+        const resultContainer = document.getElementById('result-container');
+        
+        // Poll the server every 2 seconds
+        let intervalId = setInterval(checkStatus, 2000);
+
+        function checkStatus() {
+            fetch("{{ url_for('api_pull_status') }}")
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    // Update the status message regardless
+                    statusMessage.textContent = data.message;
+                    
+                    if (data.status === 'success') {
+                        clearInterval(intervalId); // Stop polling
+                        statusHeader.textContent = 'Pull Successful';
+                        iconContainer.innerHTML = '<i class="fas fa-check-circle fa-3x text-success"></i>';
+                        resultContainer.classList.remove('d-none'); // Show button
+                        statusMessage.classList.remove('text-danger', 'text-warning');
+                        statusMessage.classList.add('text-success');
+
+                    } else if (data.status === 'error') {
+                        clearInterval(intervalId); // Stop polling
+                        statusHeader.textContent = 'Pull Failed';
+                        iconContainer.innerHTML = '<i class="fas fa-times-circle fa-3x text-danger"></i>';
+                        resultContainer.classList.remove('d-none'); // Show button
+                        statusMessage.classList.remove('text-success', 'text-warning');
+                        statusMessage.classList.add('text-danger');
+
+                    }
+                    // If data.status is 'running' or 'idle', we just update the message
+                    // and let the interval continue.
+                })
+                .catch(err => {
+                    // This catches network errors (e.g., server is down)
+                    console.error('Error fetching status:', err);
+                    clearInterval(intervalId); // Stop polling
+                    statusHeader.textContent = 'Connection Error';
+                    iconContainer.innerHTML = '<i class="fas fa-exclamation-triangle fa-3x text-warning"></i>';
+                    statusMessage.textContent = 'Could not get pull status from server. Please check the connection and try again.';
+                    resultContainer.classList.remove('d-none');
+                    statusMessage.classList.add('text-warning');
+                });
+        }
+        
+        // Run the check immediately on page load
+        checkStatus();
+    });
+</script>
+{% endblock %}

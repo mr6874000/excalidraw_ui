@@ -1,0 +1,18 @@
+[
+  {
+    "name": "Production Server",
+    "url": "http://10.25.0.112:9096"
+  },
+  {
+    "name": "Backup Node",
+    "url": "http://10.25.0.98:9096"
+  },
+  {
+    "name": "Dev1 Node",
+    "url": "http://10.25.0.109:5000"
+  },
+  {
+    "name": "Dev2 Node",
+    "url": "http://10.25.0.101:5000"
+  }
+]

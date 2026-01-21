@@ -1,0 +1,371 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+    /* Scoped container for the whiteboard to fit within the Base layout */
+    .excalidraw-wrapper {
+        position: relative;
+        height: 80vh;
+        /* Fixed height so it doesn't collapse */
+        width: 100%;
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        overflow: hidden;
+        background-color: #fff;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+    }
+
+    #root {
+        height: 100%;
+        width: 100%;
+    }
+
+    /* Tools positioned relative to the wrapper, not the window */
+    .header-tools {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        z-index: 10;
+        display: flex;
+        gap: 10px;
+    }
+
+    .btn-drawing {
+        padding: 6px 12px;
+        border-radius: 4px;
+        border: none;
+        cursor: pointer;
+        font-weight: 600;
+        font-size: 14px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        text-decoration: none;
+        display: inline-block;
+    }
+
+    .btn-drawing-primary {
+        background-color: #007bff;
+        color: white;
+    }
+
+    .btn-drawing-primary:hover {
+        background-color: #0056b3;
+        color: white;
+    }
+
+    .btn-drawing-secondary {
+        background-color: #f8f9fa;
+        color: #333;
+        border: 1px solid #ddd;
+    }
+
+    .btn-drawing-secondary:hover {
+        background-color: #e2e6ea;
+        color: #333;
+    }
+</style>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h2 class="mb-0">
+            <i class="fas fa-pen-fancy me-2"></i>Whiteboard
+            <span id="save-status" class="ms-3 text-muted align-middle"
+                style="font-size: 0.6em; font-weight: normal; display: none;"></span>
+        </h2>
+        <div class="d-flex align-items-center">
+            <p class="text-muted mb-0 me-2">Brainstorming session for</p>
+            <div id="name-container">
+                <strong id="drawing-name-display" style="cursor: pointer; border-bottom: 1px dashed #ccc;"
+                    title="Double-click to edit name">{{ drawing.name }}</strong>
+                <input type="text" id="drawing-name-input" class="form-control form-control-sm"
+                    style="display: none; width: auto; max-width: 300px;" value="{{ drawing.name }}">
+            </div>
+        </div>
+    </div>
+    <a href="{{ url_for('excalidraw_list') }}" class="btn btn-outline-secondary">
+        <i class="fas fa-arrow-left"></i> Back to List
+    </a>
+</div>
+
+<div class="excalidraw-wrapper">
+    <div class="header-tools">
+        <button id="save-btn" class="btn-drawing btn-drawing-primary"><i class="fas fa-save"></i> Save Changes</button>
+    </div>
+
+    <div id="root"></div>
+    <!-- Toast Container -->
+    <div class="toast-container position-fixed bottom-0 end-0 p-3" style="z-index: 1050">
+        <div id="saveToast" class="toast align-items-center text-white border-0" role="alert" aria-live="assertive"
+            aria-atomic="true">
+            <div class="d-flex">
+                <div class="toast-body">
+                    <!-- Message here -->
+                </div>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"
+                    aria-label="Close"></button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    window.process = { env: { NODE_ENV: 'production' } };
+</script>
+
+<script crossorigin src="{{ url_for('static', filename='vendor/react.production.min.js') }}"></script>
+<script crossorigin src="{{ url_for('static', filename='vendor/react-dom.production.min.js') }}"></script>
+<script crossorigin src="{{ url_for('static', filename='vendor/excalidraw.production.min.js') }}"></script>
+
+<script>
+    // Name Editing Logic
+    const nameDisplay = document.getElementById('drawing-name-display');
+    const nameInput = document.getElementById('drawing-name-input');
+    const nameContainer = document.getElementById('name-container');
+
+    function enableEdit() {
+        nameDisplay.style.display = 'none';
+        nameInput.style.display = 'block';
+        nameInput.focus();
+    }
+
+    function showToast(message, type = 'success') {
+        const toastEl = document.getElementById('saveToast');
+        const toastBody = toastEl.querySelector('.toast-body');
+
+        toastBody.textContent = message;
+
+        // Reset classes
+        toastEl.classList.remove('bg-success', 'bg-danger', 'bg-warning', 'bg-info');
+
+        // Add appropriate class
+        if (type === 'success') toastEl.classList.add('bg-success');
+        else if (type === 'error') toastEl.classList.add('bg-danger');
+        else if (type === 'warning') toastEl.classList.add('bg-warning');
+        else toastEl.classList.add('bg-info');
+
+        const toast = new bootstrap.Toast(toastEl, { delay: 2000 });
+        toast.show();
+    }
+
+    function saveName() {
+        const newName = nameInput.value.trim();
+        if (!newName || newName === nameDisplay.innerText) {
+            cancelEdit();
+            return; // No change
+        }
+
+        // Optimistic update
+        nameDisplay.innerText = newName;
+        cancelEdit();
+
+        // API Call
+        fetch('/api/excalidraw/{{ drawing.id }}', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: newName }) // Only sending name
+        })
+            .then(res => res.json())
+            .then(data => {
+                if (data.status !== 'success') {
+                    console.error("Failed to save name:", data);
+                    showToast('Failed to save name.', 'error');
+                } else {
+                    showToast('Name saved successfully!', 'success');
+                }
+            })
+            .catch(err => {
+                console.error("Error saving name:", err);
+                showToast('Error saving name.', 'error');
+            });
+    }
+
+    function cancelEdit() {
+        nameDisplay.style.display = 'inline';
+        nameInput.style.display = 'none';
+        nameInput.value = nameDisplay.innerText;
+    }
+
+    nameDisplay.addEventListener('dblclick', enableEdit);
+
+    nameInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            saveName();
+        } else if (e.key === 'Escape') {
+            cancelEdit();
+        }
+    });
+
+    nameInput.addEventListener('blur', saveName);
+
+
+    // --- Excalidraw Logic ---
+
+    // Debugging logs
+    console.log("React Loaded:", !!window.React);
+    console.log("ExcalidrawLib Loaded:", !!window.ExcalidrawLib);
+
+    const { useState, useEffect, useRef, useCallback } = React;
+
+    const debounce = (func, wait) => {
+        let timeout;
+        return (...args) => {
+            const later = () => {
+                clearTimeout(timeout);
+                func(...args);
+            };
+            clearTimeout(timeout);
+            timeout = setTimeout(later, wait);
+        };
+    };
+
+    // Access via window to prevent crashes
+    const ExcalidrawLib = window.ExcalidrawLib || null;
+    const Excalidraw = ExcalidrawLib ? ExcalidrawLib.Excalidraw : null;
+
+    function App() {
+        const [excalidrawAPI, setExcalidrawAPI] = useState(null);
+        const [initialData, setInitialData] = useState(null);
+        const [isLoading, setIsLoading] = useState(true);
+        const lastSavedRef = useRef(null);
+        const isDirtyRef = useRef(false);
+
+        useEffect(() => {
+            const handleBeforeUnload = (e) => {
+                if (isDirtyRef.current) {
+                    e.preventDefault();
+                    e.returnValue = '';
+                }
+            };
+            window.addEventListener('beforeunload', handleBeforeUnload);
+            return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+        }, []);
+
+        // Error Boundary UI
+        if (!Excalidraw) {
+            return React.createElement(
+                "div",
+                { style: { display: "flex", height: "100%", justifyContent: "center", alignItems: "center", flexDirection: "column", fontFamily: "sans-serif" } },
+                React.createElement("h3", { style: { color: "#dc3545" } }, "Failed to load Excalidraw Library"),
+                React.createElement("p", null, "Please check the browser console for details.")
+            );
+        }
+
+        useEffect(() => {
+            // Fetch existing data
+            fetch('/api/excalidraw/{{ drawing.id }}')
+                .then(res => res.json())
+                .then(data => {
+                    if (data && Object.keys(data).length > 0) {
+                        setInitialData(data);
+                    }
+                })
+                .catch(err => console.error("Error loading Excalidraw data:", err))
+                .finally(() => setIsLoading(false));
+        }, []);
+
+        const saveFile = useCallback(async () => {
+            if (!excalidrawAPI) return;
+
+            const elements = excalidrawAPI.getSceneElements();
+            const appState = excalidrawAPI.getAppState();
+            const files = excalidrawAPI.getFiles();
+
+            const data = {
+                elements,
+                appState: {
+                    viewBackgroundColor: appState.viewBackgroundColor,
+                    currentItemFontFamily: appState.currentItemFontFamily,
+                },
+                files
+            };
+
+            const dataStr = JSON.stringify(data);
+
+            if (dataStr === lastSavedRef.current) {
+                isDirtyRef.current = false;
+                return;
+            }
+
+            const statusEl = document.getElementById('save-status');
+            statusEl.innerText = "Saving...";
+            statusEl.style.display = "inline-block";
+
+            try {
+                const res = await fetch('/api/excalidraw/{{ drawing.id }}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: dataStr
+                });
+                const result = await res.json();
+                if (result.status === 'success') {
+                    lastSavedRef.current = dataStr;
+                    statusEl.innerText = ""; // Clear text status
+                    statusEl.style.display = "none";
+                    isDirtyRef.current = false;
+                    showToast('Drawing saved!', 'success');
+                } else {
+                    statusEl.innerText = "Error saving!";
+                    showToast('Error saving drawing!', 'error');
+                }
+            } catch (err) {
+                console.error("Save error:", err);
+                statusEl.innerText = "Error saving!";
+                showToast('Error saving drawing!', 'error');
+            }
+        }, [excalidrawAPI]);
+
+        const debouncedSave = useCallback(debounce(() => {
+            saveFile();
+        }, 1000), [saveFile]); // Debounce for 1 second
+
+        // Hook up manual save button & shortcuts
+        useEffect(() => {
+            const saveBtn = document.getElementById('save-btn');
+            if (saveBtn) saveBtn.onclick = saveFile;
+
+            const handleKeyDown = (e) => {
+                if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                    e.preventDefault();
+                    saveFile();
+                }
+            };
+            window.addEventListener('keydown', handleKeyDown);
+
+            return () => {
+                if (saveBtn) saveBtn.onclick = null;
+                window.removeEventListener('keydown', handleKeyDown);
+            };
+        }, [saveFile]);
+
+        if (isLoading) {
+            return React.createElement(
+                "div",
+                { style: { display: "flex", height: "100%", justifyContent: "center", alignItems: "center", fontFamily: "sans-serif", color: "#666" } },
+                "Loading drawing..."
+            );
+        }
+
+        return React.createElement(
+            "div",
+            { style: { height: "100%" } },
+            React.createElement(Excalidraw, {
+                excalidrawAPI: (api) => setExcalidrawAPI(api),
+                initialData: initialData,
+                onChange: (elements, appState, files) => {
+                    // Start auto-save on any change
+                    isDirtyRef.current = true;
+                    debouncedSave();
+                },
+                name: "Excalidraw Drawing - {{ drawing.name }}", // Note: This might not auto-update inside the React component if the scope name changes, but that's fine for now.
+                UIOptions: { canvasActions: { loadScene: false } }
+            })
+        );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById("root"));
+    root.render(React.createElement(App));
+</script>
+{% endblock %}

@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                Add a Note
+            </div>
+            <div class="card-body">
+                <form action="{{ url_for('add_note') }}" method="POST">
+                    <div class="mb-3">
+                        <label for="content" class="form-label">Note Content:</label>
+                        <input type="text" class="form-control" id="content" name="content" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Add Note</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                Current Notes
+            </div>
+            <ul class="list-group list-group-flush">
+                {% if notes %}
+                    {% for note in notes %}
+                        <li class="list-group-item">{{ note.content }}</li>
+                    {% endfor %}
+                {% else %}
+                    <li class="list-group-item text-muted">No notes yet.</li>
+                {% endif %}
+            </ul>
+        </div>
+    </div>
+</div>
+{% endblock %}
