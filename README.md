@@ -9,7 +9,7 @@ To run the application directly on your host machine using Python:
 1.  **Clone the repository**:
     
     ```bash
-    git clone <repository-url>
+    git clone git@github.com:mr6874000/excalidraw_ui.git
     cd excalidraw_ui
     ```
 
