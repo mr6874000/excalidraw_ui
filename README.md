@@ -2,6 +2,30 @@
 
 This application provides a web-based interface for Excalidraw.
 
+## Technology Stack
+
+*   **Backend**: Python (Flask)
+*   **Database**: SQLite
+*   **Frontend**: HTML, JavaScript, React (for Excalidraw component)
+*   **Containerization**: Docker
+
+## Data Storage & Architecture
+
+The application uses **SQLite** for data persistence.
+
+*   **Schema-Agnostic Design**: The database models (`Excalidraw` and `Instance`) utilize a `JSON` column (`data`) to store the majority of their attributes. This allows for a flexible, schema-less approach where new fields can be added without migration headaches, ensuring forward and backward compatibility.
+*   **File Storage**: Excalidraw drawings and metadata are stored within the `data/` directory.
+
+## Syncing & Collaboration
+
+This application supports a **"Pull-based" synchronization** mechanism to share data between instances:
+
+1.  **Add Instances**: You can register other running instances of this application (Nodes) by their URL.
+2.  **Pull Data**: You can initiate a "Pull" from a registered remote instance.
+    *   This process downloads a full export (Zip archive) of the remote instance's data.
+    *   It **replaces** the local data with the remote data, effectively syncing the state.
+    *   **Note**: This is a destructive sync (it overwrites local data with the remote state), useful for keeping mirrors up to date.
+
 ## Running Locally (Python)
 
 To run the application directly on your host machine using Python:
