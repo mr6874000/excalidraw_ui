@@ -6,7 +6,7 @@ on:
 
 env:
   # 1. CHANGE THIS to your GitHub Username (lowercase)
-  GHCR_OWNER: your_github_username_here 
+  GHCR_OWNER: mr6874000 
   REGISTRY: ghcr.io
 
 jobs:
