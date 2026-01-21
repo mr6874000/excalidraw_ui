@@ -83,6 +83,7 @@ To run the application using Docker Compose, create a `docker-compose.yaml` file
 services:
   excalidraw:
     image: ghcr.io/mr6874000/excalidraw_ui:latest
+    build: .
     ports:
       - "5000:5000"
     restart: unless-stopped
