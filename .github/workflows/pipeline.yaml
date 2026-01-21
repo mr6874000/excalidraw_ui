@@ -24,7 +24,7 @@ jobs:
       - name: Sanitize Repository Name
         id: sanitize_repo_name
         run: |
-          REPO_FULL_NAME="${{ github.repository }}"  # Example: "owner/repository"
+          REPO_FULL_NAME="${{ github.repository }}"
           
           # Extract only the repository name
           REPO_NAME=$(echo "$REPO_FULL_NAME" | awk -F/ '{print $2}')
@@ -35,7 +35,8 @@ jobs:
           echo "Original Repository Name: $REPO_NAME"
           echo "Sanitized Repository Name: $SANITIZED_NAME"
           
-          echo "::set-output name=sanitized_name::$SANITIZED_NAME"
+          # Modern way to set output
+          echo "sanitized_name=$SANITIZED_NAME" >> $GITHUB_OUTPUT
 
       # Set environment variables dynamically based on sanitized name
       - name: Set Environment Variables
@@ -52,7 +53,6 @@ jobs:
       # Check out the repository code
       - name: Check out Repository Code
         uses: actions/checkout@v4
-
 
       # Set up Python environment
       - name: Set up Python 3 and Install Dependencies
@@ -75,17 +75,13 @@ jobs:
           # Extract branch name (remove refs/heads/)
           BRANCH_NAME=$(echo "${{ github.ref }}" | sed 's|refs/heads/||')
           
-          # Get last 4 chars of the commit SHA
-          SHORT_SHA=$(echo "${{ github.sha }}" | tail -c 5)
-          
           # Build version string
-          # VERSION="$BRANCH_NAME-$SHORT_SHA"
           VERSION="$BRANCH_NAME-${{ github.run_number }}"
 
           # Write to .version file
           echo "$VERSION" > .version
           echo "Generated version: $VERSION"
-          ls -latr
+          
           echo "📦 Building Docker image..."
           docker build -t $DOCKER_LOCAL_HOST/${{ env.IMAGE_NAME }}:latest .
 
@@ -102,18 +98,17 @@ jobs:
 
       # Upload the generated docker-compose.yaml as an artifact
       - name: Upload docker-compose artifact
-        uses: actions/upload-artifact@v3 # Changed from @v4 to @v1
+        uses: actions/upload-artifact@v3 
         with:
           name: docker-compose-${{ env.IMAGE_NAME }}
           path: docker-compose.yaml
 
-      # Check Docker Registry for Image (uses DOCKER_LOCAL_HOST)
+      # Check Docker Registry for Image
       - name: Check Docker Registry for Image
         env:
           REGISTRY: ${{ env.DOCKER_LOCAL_HOST }}
           IMAGE: ${{ env.IMAGE_NAME }}
         run: |
-          # Ensure jq is available
           if ! command -v jq >/dev/null 2>&1; then
             sudo apt-get update && sudo apt-get install -y jq
           fi
@@ -128,7 +123,6 @@ jobs:
             exit 1
           fi
 
-
       # Redeploy on TrueNAS
       - name: Redeploy on TrueNAS
         if: ${{ env.TRUENAS_DEPLOY == 'true' && env.IS_DEV_BRANCH == 'false' }}
@@ -140,7 +134,7 @@ jobs:
       - name: Redeploy on Docker
         if: ${{ env.DOCKER_DEPLOY == 'true' && env.IS_DEV_BRANCH == 'false' }}
         run: |
-          set -e  # Exit immediately if any command exits with a non-zero status
+          set -e
           source venv/bin/activate
           if ! python3 .github..scripts/docker.py; then
             echo "❌ Deployment script failed!"
