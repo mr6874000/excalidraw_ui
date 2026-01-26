@@ -13,6 +13,22 @@
         overflow: hidden;
         background-color: #fff;
         box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+        transition: all 0.3s ease;
+        /* Smooth transition */
+    }
+
+    /* Fullscreen Mode Styles */
+    .excalidraw-wrapper.fullscreen-mode {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        z-index: 9999;
+        /* High z-index to overlay everything */
+        border-radius: 0;
+        border: none;
+        box-shadow: none;
     }
 
     #root {
@@ -86,8 +102,11 @@
     </a>
 </div>
 
-<div class="excalidraw-wrapper">
+<div class="excalidraw-wrapper" id="excalidraw-wrapper">
     <div class="header-tools">
+        <button id="fullscreen-btn" class="btn-drawing btn-drawing-secondary" title="Toggle Full Screen">
+            <i class="fas fa-expand"></i> Full Screen
+        </button>
         <button id="save-btn" class="btn-drawing btn-drawing-primary"><i class="fas fa-save"></i> Save Changes</button>
     </div>
 
@@ -326,6 +345,9 @@
             const saveBtn = document.getElementById('save-btn');
             if (saveBtn) saveBtn.onclick = saveFile;
 
+            // Fullscreen Logic inside App component to avoid race conditions with React state if useful, but standard JS is fine too.
+            // Keeping standard JS separate is safer for this vanilla integration.
+
             const handleKeyDown = (e) => {
                 if ((e.ctrlKey || e.metaKey) && e.key === 's') {
                     e.preventDefault();
@@ -367,5 +389,34 @@
 
     const root = ReactDOM.createRoot(document.getElementById("root"));
     root.render(React.createElement(App));
+
+    // Full Screen Toggle Logic
+    const fullscreenBtn = document.getElementById('fullscreen-btn');
+    const wrapper = document.getElementById('excalidraw-wrapper');
+
+    // Check if fullscreenBtn exists (it should)
+    if (fullscreenBtn && wrapper) {
+        fullscreenBtn.addEventListener('click', function () {
+            wrapper.classList.toggle('fullscreen-mode');
+
+            // Check state
+            const isFullscreen = wrapper.classList.contains('fullscreen-mode');
+
+            // Update button text/icon
+            if (isFullscreen) {
+                fullscreenBtn.innerHTML = '<i class="fas fa-compress"></i> Exit Full Screen';
+            } else {
+                fullscreenBtn.innerHTML = '<i class="fas fa-expand"></i> Full Screen';
+            }
+        });
+
+        // Escape key to exit full screen
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape' && wrapper.classList.contains('fullscreen-mode')) {
+                wrapper.classList.remove('fullscreen-mode');
+                fullscreenBtn.innerHTML = '<i class="fas fa-expand"></i> Full Screen';
+            }
+        });
+    }
 </script>
 {% endblock %}
