@@ -107,7 +107,8 @@
         <button id="fullscreen-btn" class="btn-drawing btn-drawing-secondary" title="Toggle Full Screen">
             <i class="fas fa-expand"></i> Full Screen
         </button>
-        <button id="save-btn" class="btn-drawing btn-drawing-primary"><i class="fas fa-save"></i> Save Changes</button>
+        <button id="save-btn" class="btn-drawing btn-drawing-primary" disabled><i class="fas fa-save"></i> Save
+            Changes</button>
     </div>
 
     <div id="root"></div>
@@ -270,6 +271,18 @@
             );
         }
 
+        const getSerializedData = useCallback((elements, appState, files) => {
+            const data = {
+                elements,
+                appState: {
+                    viewBackgroundColor: appState.viewBackgroundColor,
+                    currentItemFontFamily: appState.currentItemFontFamily,
+                },
+                files
+            };
+            return JSON.stringify(data);
+        }, []);
+
         useEffect(() => {
             // Fetch existing data
             fetch('/api/excalidraw/{{ drawing.id }}')
@@ -277,6 +290,8 @@
                 .then(data => {
                     if (data && Object.keys(data).length > 0) {
                         setInitialData(data);
+                        // Initialize lastSavedRef with the data we just loaded
+                        lastSavedRef.current = JSON.stringify(data);
                     }
                 })
                 .catch(err => console.error("Error loading Excalidraw data:", err))
@@ -290,25 +305,28 @@
             const appState = excalidrawAPI.getAppState();
             const files = excalidrawAPI.getFiles();
 
-            const data = {
-                elements,
-                appState: {
-                    viewBackgroundColor: appState.viewBackgroundColor,
-                    currentItemFontFamily: appState.currentItemFontFamily,
-                },
-                files
-            };
-
-            const dataStr = JSON.stringify(data);
+            const dataStr = getSerializedData(elements, appState, files);
 
             if (dataStr === lastSavedRef.current) {
                 isDirtyRef.current = false;
+                // Ensure button is disabled if data matches
+                const saveBtn = document.getElementById('save-btn');
+                if (saveBtn && !saveBtn.disabled) saveBtn.disabled = true;
                 return;
             }
 
             const statusEl = document.getElementById('save-status');
+            const saveBtn = document.getElementById('save-btn'); // Get the button
+            const originalBtnText = '<i class="fas fa-save"></i> Save Changes';
+
+            // 1. Update UI to "Saving..."
             statusEl.innerText = "Saving...";
             statusEl.style.display = "inline-block";
+
+            if (saveBtn) {
+                saveBtn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Saving...';
+                saveBtn.disabled = true;
+            }
 
             try {
                 const res = await fetch('/api/excalidraw/{{ drawing.id }}', {
@@ -319,22 +337,58 @@
                     body: dataStr
                 });
                 const result = await res.json();
+
                 if (result.status === 'success') {
                     lastSavedRef.current = dataStr;
                     statusEl.innerText = ""; // Clear text status
                     statusEl.style.display = "none";
                     isDirtyRef.current = false;
                     showToast('Drawing saved!', 'success');
+
+                    // 2. Update UI to "Saved" then Revert
+                    if (saveBtn) {
+                        saveBtn.innerHTML = '<i class="fas fa-check"></i> Saved';
+                        saveBtn.classList.remove('btn-drawing-primary');
+                        saveBtn.classList.add('btn-success');
+
+                        setTimeout(() => {
+                            saveBtn.innerHTML = originalBtnText;
+                            saveBtn.disabled = !isDirtyRef.current;
+                            saveBtn.classList.remove('btn-success');
+                            saveBtn.classList.add('btn-drawing-primary');
+                        }, 2000); // Wait 2 seconds
+                    }
+
                 } else {
                     statusEl.innerText = "Error saving!";
                     showToast('Error saving drawing!', 'error');
+
+                    // Error state for button
+                    if (saveBtn) {
+                        saveBtn.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Error';
+                        setupRevert();
+                    }
                 }
             } catch (err) {
                 console.error("Save error:", err);
                 statusEl.innerText = "Error saving!";
                 showToast('Error saving drawing!', 'error');
+                if (saveBtn) {
+                    saveBtn.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Error';
+                    setupRevert();
+                }
             }
-        }, [excalidrawAPI]);
+
+            function setupRevert() {
+                setTimeout(() => {
+                    if (saveBtn) {
+                        saveBtn.innerHTML = originalBtnText;
+                        saveBtn.disabled = false;
+                    }
+                }, 3000);
+            }
+
+        }, [excalidrawAPI, getSerializedData]);
 
         const debouncedSave = useCallback(debounce(() => {
             saveFile();
@@ -377,9 +431,21 @@
                 excalidrawAPI: (api) => setExcalidrawAPI(api),
                 initialData: initialData,
                 onChange: (elements, appState, files) => {
-                    // Start auto-save on any change
-                    isDirtyRef.current = true;
-                    debouncedSave();
+                    const dataStr = getSerializedData(elements, appState, files);
+
+                    // Specific check: Is it actually different?
+                    const isActuallyDirty = dataStr !== lastSavedRef.current;
+                    isDirtyRef.current = isActuallyDirty;
+
+                    // Enable/Disable save button
+                    const saveBtn = document.getElementById('save-btn');
+                    if (saveBtn) {
+                        saveBtn.disabled = !isActuallyDirty;
+                    }
+
+                    if (isActuallyDirty) {
+                        debouncedSave();
+                    }
                 },
                 name: "Excalidraw Drawing - {{ drawing.name }}", // Note: This might not auto-update inside the React component if the scope name changes, but that's fine for now.
                 UIOptions: { canvasActions: { loadScene: false } }
