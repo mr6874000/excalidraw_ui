@@ -392,7 +392,7 @@
 
         const debouncedSave = useCallback(debounce(() => {
             saveFile();
-        }, 1000), [saveFile]); // Debounce for 1 second
+        }, 500), [saveFile]); // Debounce for 500ms
 
         // Hook up manual save button & shortcuts
         useEffect(() => {
@@ -410,9 +410,21 @@
             };
             window.addEventListener('keydown', handleKeyDown);
 
+            // Immediate save on interaction end (mouse release or key release)
+            const handleInteractionEnd = () => {
+                if (isDirtyRef.current) {
+                    saveFile();
+                }
+            };
+
+            window.addEventListener('pointerup', handleInteractionEnd);
+            window.addEventListener('keyup', handleInteractionEnd);
+
             return () => {
                 if (saveBtn) saveBtn.onclick = null;
                 window.removeEventListener('keydown', handleKeyDown);
+                window.removeEventListener('pointerup', handleInteractionEnd);
+                window.removeEventListener('keyup', handleInteractionEnd);
             };
         }, [saveFile]);
 
