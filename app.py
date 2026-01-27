@@ -9,6 +9,7 @@ from flask import (
     Flask, render_template, request, redirect, url_for,
     flash, send_file, jsonify, abort
 )
+from flask_socketio import SocketIO, emit, join_room, leave_room
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import inspect
 
@@ -37,6 +38,7 @@ except Exception as e:
 
 
 db = SQLAlchemy(app)
+socketio = SocketIO(app, cors_allowed_origins="*") # Initialize SocketIO
 
 # --- GLOBAL STATE FOR ASYNC PULL ---
 # We'll use this dictionary to track the pull status across requests
@@ -502,6 +504,66 @@ def api_pull_status():
     return jsonify(status_copy)
 
 
+# --- SocketIO Events ---
+
+# Room ID is just the drawing ID (stringified)
+# Participants: { room_id: { sid: user_name } }
+participants = {}
+
+@socketio.on('join')
+def on_join(data):
+    room = str(data['room'])
+    name = data['name']
+    
+    join_room(room)
+    
+    if room not in participants:
+        participants[room] = {}
+    participants[room][request.sid] = name
+    
+    # Broadcast updated participant list
+    emit('room_users', list(participants[room].values()), room=room)
+    print(f"User {name} joined room {room}")
+
+@socketio.on('disconnect')
+def on_disconnect():
+    # Find which room this SID was in and remove them
+    for room, users in participants.items():
+        if request.sid in users:
+            name = users.pop(request.sid)
+            leave_room(room)
+            emit('room_users', list(users.values()), room=room)
+            print(f"User {name} left room {room}")
+            # If room empty, clean up? (optional, maybe keep it simple for now)
+            break
+
+@socketio.on('update_scene')
+def on_update_scene(data):
+    """
+    data = {
+        'room': room_id,
+        'elements': ...,
+        'appState': ...
+    }
+    """
+    room = str(data['room'])
+    # Broadcast to everyone else in the room
+    emit('update_scene', data, room=room, include_self=False)
+
+@socketio.on('cursor_move')
+def on_cursor_move(data):
+    """
+    data = {
+        'room': room_id,
+        'username': name,
+        'x': x,
+        'y': y
+    }
+    """
+    room = str(data['room'])
+    emit('cursor_move', data, room=room, include_self=False)
+
+
 # --- 3. SEEDING LOGIC ---
 
 def seed_nodes():
@@ -558,4 +620,5 @@ if __name__ == '__main__':
         seed_nodes()
 
     # Host='0.0.0.0' makes it accessible on your network
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    # app.run(debug=True, host='0.0.0.0', port=5000)
+    socketio.run(app, debug=True, host='0.0.0.0', port=5000)

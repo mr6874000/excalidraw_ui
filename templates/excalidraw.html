@@ -88,6 +88,12 @@
 
 <div class="excalidraw-wrapper">
     <div class="header-tools">
+        <div id="participants-list"
+            class="d-none bg-white p-2 rounded shadow-sm border me-2 d-flex align-items-center gap-2">
+            <!-- Participants will be injected here -->
+        </div>
+        <button id="go-live-btn" class="btn-drawing btn-drawing-secondary"><i class="fas fa-broadcast-tower"></i> Go
+            Live</button>
         <button id="save-btn" class="btn-drawing btn-drawing-primary"><i class="fas fa-save"></i> Save Changes</button>
     </div>
 
@@ -106,6 +112,26 @@
         </div>
     </div>
 </div>
+
+<!-- Join Modal -->
+<div class="modal fade" id="joinModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static"
+    data-bs-keyboard="false">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Join Live Session</h5>
+            </div>
+            <div class="modal-body">
+                <p>Enter your name to join the live collaboration.</p>
+                <input type="text" id="join-name-input" class="form-control" placeholder="Your Name" autofocus>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-primary" id="join-btn">Join</button>
+            </div>
+        </div>
+    </div>
+</div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -116,6 +142,10 @@
 <script crossorigin src="{{ url_for('static', filename='vendor/react.production.min.js') }}"></script>
 <script crossorigin src="{{ url_for('static', filename='vendor/react-dom.production.min.js') }}"></script>
 <script crossorigin src="{{ url_for('static', filename='vendor/excalidraw.production.min.js') }}"></script>
+<!-- Socket.IO -->
+<script src="https://cdn.socket.io/4.7.4/socket.io.min.js"
+    integrity="sha384-Gr6Lu2Ajx28mzwyVR8CFkULdCU7kMlZ9UthllibdOSo6qAiN+yXNHqtgdTvFXMT4"
+    crossorigin="anonymous"></script>>
 
 <script>
     // Name Editing Logic
@@ -223,6 +253,100 @@
     const ExcalidrawLib = window.ExcalidrawLib || null;
     const Excalidraw = ExcalidrawLib ? ExcalidrawLib.Excalidraw : null;
 
+    // --- SOCKET LOGIC ---
+    let socket = null;
+    let isReceivingUpdate = false;
+    let myName = localStorage.getItem('excalidraw-name') || '';
+
+    function connectSocket(userName, excalidrawAPI) {
+        if (socket) return;
+
+        socket = io();
+        const roomId = "{{ drawing.id }}";
+
+        socket.on('connect', () => {
+            console.log("Connected to socket");
+            socket.emit('join', { room: roomId, name: userName });
+        });
+
+        socket.on('update_scene', (data) => {
+            if (!excalidrawAPI) return;
+            // Prevent echo loop
+            isReceivingUpdate = true;
+            try {
+                excalidrawAPI.updateScene({
+                    elements: data.elements,
+                    appState: data.appState
+                });
+            } finally {
+                // Small timeout to ensure onChange doesn't fire immediately after this
+                setTimeout(() => { isReceivingUpdate = false; }, 50);
+            }
+        });
+
+        socket.on('room_users', (users) => {
+            const listEl = document.getElementById('participants-list');
+            listEl.classList.remove('d-none');
+            // Simple avatar list
+            listEl.innerHTML = users.map(u =>
+                `<span class="badge rounded-pill bg-primary" title="${u}">${u[0].toUpperCase()}</span>`
+            ).join('');
+        });
+
+        // Update UI
+        const btn = document.getElementById('go-live-btn');
+        btn.innerHTML = '<i class="fas fa-link"></i> Copy Link';
+        btn.classList.remove('btn-drawing-secondary');
+        btn.classList.add('btn-drawing-success');
+        btn.onclick = () => {
+            const url = window.location.href;
+            navigator.clipboard.writeText(url).then(() => showToast('Link copied!', 'success'));
+        };
+    }
+
+    // Init Logic
+    document.addEventListener('DOMContentLoaded', () => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const isLive = urlParams.get('live') === 'true';
+        const joinModal = new bootstrap.Modal(document.getElementById('joinModal'));
+        const nameInput = document.getElementById('join-name-input');
+        const joinBtn = document.getElementById('join-btn');
+
+        if (isLive) {
+            joinModal.show();
+        }
+
+        document.getElementById('go-live-btn').onclick = () => {
+            if (!socket) {
+                // If not already live, start the flow
+                joinModal.show();
+            }
+        };
+
+        joinBtn.onclick = () => {
+            const name = nameInput.value.trim();
+            if (!name) return;
+
+            localStorage.setItem('excalidraw-name', name);
+            myName = name;
+            joinModal.hide();
+
+            // Connect
+            // We need excalidrawAPI, handled in React component effect or via global
+            // For now, we set a flag and the React component will pick it up
+            window.startLiveSession(name);
+
+            // Update URL
+            if (!isLive) {
+                const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname + '?live=true';
+                window.history.pushState({ path: newUrl }, '', newUrl);
+            }
+        };
+
+        if (myName) nameInput.value = myName;
+    });
+
+
     function App() {
         const [excalidrawAPI, setExcalidrawAPI] = useState(null);
         const [initialData, setInitialData] = useState(null);
@@ -240,6 +364,19 @@
             window.addEventListener('beforeunload', handleBeforeUnload);
             return () => window.removeEventListener('beforeunload', handleBeforeUnload);
         }, []);
+
+        // Expose startLiveSession to global scope so plain JS can call it
+        useEffect(() => {
+            window.startLiveSession = (name) => {
+                if (excalidrawAPI) {
+                    connectSocket(name, excalidrawAPI);
+                }
+            };
+            // If we closed the modal but api wasn't ready, we might need to check ?? 
+            // Actually the modal waits for user input.
+            // If the user already input name and clicked join, and then we loaded...
+        }, [excalidrawAPI]);
+
 
         // Error Boundary UI
         if (!Excalidraw) {
@@ -355,6 +492,23 @@
                 excalidrawAPI: (api) => setExcalidrawAPI(api),
                 initialData: initialData,
                 onChange: (elements, appState, files) => {
+                    // Update server via socket if live
+                    if (socket && !isReceivingUpdate) {
+                        // We probably want to debounce this too, but for live collab we want low latency.
+                        // Maybe throttle to 30ms or something.
+                        // For now, let's just emit (Excalidraw updates are frequent, so might be heavy)
+                        // Let's debounce slightly or check if valid change.
+
+                        // Note: We are NOT sending files over socket yet, just elements.
+                        socket.emit('update_scene', {
+                            room: "{{ drawing.id }}",
+                            elements,
+                            appState: {
+                                viewBackgroundColor: appState.viewBackgroundColor
+                            }
+                        });
+                    }
+
                     // Start auto-save on any change
                     isDirtyRef.current = true;
                     debouncedSave();
