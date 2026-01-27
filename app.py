@@ -4,7 +4,8 @@ import zipfile
 import tempfile
 import requests
 import threading
-import json  # <-- Added import
+import json
+import uuid  # <-- Added import
 from flask import (
     Flask, render_template, request, redirect, url_for,
     flash, send_file, jsonify, abort
@@ -54,7 +55,7 @@ class Instance(db.Model):
     Stores the URLs of other app instances.
     Uses a JSON 'data' column for flexibility.
     """
-    id = db.Column(db.Integer, primary_key=True)
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     # The stable column that holds all attributes
     data = db.Column(db.JSON, default=dict, nullable=False)
 
@@ -76,7 +77,7 @@ class Excalidraw(db.Model):
     Uses a JSON 'data' column for flexibility.
     Schema agnostic: all specific fields like name, directory, elements, etc. go into 'data'.
     """
-    id = db.Column(db.Integer, primary_key=True)
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     data = db.Column(db.JSON, default=dict, nullable=False)
 
     @property
@@ -281,25 +282,25 @@ def create_excalidraw():
 
 
 
-@app.route('/excalidraw/<int:id>')
+@app.route('/excalidraw/<id>')
 def view_excalidraw(id):
     """View/Edit Excalidraw drawing."""
     drawing = db.get_or_404(Excalidraw, id)
     return render_template('excalidraw.html', drawing=drawing)
 
-@app.route('/excalidraw/<int:id>/readonly')
+@app.route('/excalidraw/<id>/readonly')
 def view_excalidraw_readonly(id):
     """Read-only view of Excalidraw drawing."""
     drawing = db.get_or_404(Excalidraw, id)
     return render_template('excalidraw_readonly.html', drawing=drawing)
 
-@app.route('/api/excalidraw/<int:id>', methods=['GET'])
+@app.route('/api/excalidraw/<id>', methods=['GET'])
 def get_excalidraw_data(id):
     """API to get drawing data."""
     drawing = db.get_or_404(Excalidraw, id)
     return jsonify(drawing.data)
 
-@app.route('/api/excalidraw/<int:id>', methods=['POST'])
+@app.route('/api/excalidraw/<id>', methods=['POST'])
 def save_excalidraw_data(id):
     """API to save drawing data."""
     drawing = db.get_or_404(Excalidraw, id)
@@ -373,7 +374,7 @@ def add_instance():
             
     return redirect(url_for('index'))
 
-@app.route('/delete-instance/<int:instance_id>', methods=['POST'])
+@app.route('/delete-instance/<instance_id>', methods=['POST'])
 def delete_instance(instance_id):
     """Deletes an instance from the database."""
     instance = db.get_or_404(Instance, instance_id)
@@ -458,7 +459,7 @@ def _run_pull_task(app_instance, instance_id):
 
 
 # --- MODIFIED: This route now *starts* the pull task ---
-@app.route('/start-pull/<int:instance_id>', methods=['POST'])
+@app.route('/start-pull/<instance_id>', methods=['POST'])
 def start_pull(instance_id):
     """
     Starts the asynchronous pull task and redirects to the status page.
