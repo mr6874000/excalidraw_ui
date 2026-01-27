@@ -1,4 +1,4 @@
-Fflask
+Flask
 flask-sqlalchemy
 requests
 python-dotenv
