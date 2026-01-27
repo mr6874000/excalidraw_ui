@@ -24,10 +24,26 @@
     .bottom-tools {
         position: absolute;
         bottom: 10px;
-        left: 10px;
+        right: 10px;
+        /* Changed from left: 10px */
+        left: auto;
         z-index: 10;
         display: flex;
         gap: 10px;
+    }
+
+    /* Hide the default Excalidraw Help button */
+    .excalidraw .layer-ui__wrapper .footer-center {
+        display: none !important;
+    }
+
+    .excalidraw .App-bottom-bar section {
+        /* Sometimes help is here */
+    }
+
+    button[aria-label="Help"],
+    button[title="Help"] {
+        display: none !important;
     }
 
     .btn-drawing {
@@ -94,9 +110,15 @@
         </div>
         <button id="go-live-btn" class="btn-drawing btn-drawing-secondary"><i class="fas fa-broadcast-tower"></i> Go
             Live</button>
+        <button id="import-btn" class="btn-drawing btn-drawing-secondary"><i class="fas fa-file-import"></i>
+            Import</button>
+        <button id="export-btn" class="btn-drawing btn-drawing-secondary"><i class="fas fa-file-export"></i>
+            Export</button>
         <button id="save-btn" class="btn-drawing btn-drawing-primary"><i class="fas fa-save"></i> Save Changes</button>
         <button id="fullscreen-btn" class="btn-drawing btn-drawing-secondary"><i class="fas fa-expand"></i> Full
             Screen</button>
+        <!-- Hidden file input for import -->
+        <input type="file" id="file-input" style="display: none;" accept=".excalidraw,.json">
     </div>
 
     <div id="root"></div>
@@ -507,6 +529,89 @@
                 window.removeEventListener('keydown', handleKeyDown);
             };
         }, [saveFile]);
+
+        // Export Logic
+        const handleExport = useCallback(() => {
+            if (!excalidrawAPI) return;
+
+            const elements = excalidrawAPI.getSceneElements();
+            const appState = excalidrawAPI.getAppState();
+            const files = excalidrawAPI.getFiles();
+
+            const data = {
+                type: "excalidraw",
+                version: 2,
+                source: window.location.origin,
+                elements,
+                appState: {
+                    viewBackgroundColor: appState.viewBackgroundColor,
+                    currentItemFontFamily: appState.currentItemFontFamily,
+                },
+                files
+            };
+
+            const fileName = `excalidraw-{{ drawing.name }}-${new Date().toISOString().slice(0, 10)}.excalidraw`;
+            const json = JSON.stringify(data, null, 2);
+            const blob = new Blob([json], { type: "application/json" });
+            const href = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = href;
+            link.download = fileName;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }, [excalidrawAPI]);
+
+        // Import Logic
+        useEffect(() => {
+            const importBtn = document.getElementById('import-btn');
+            const fileInput = document.getElementById('file-input');
+            const exportBtn = document.getElementById('export-btn');
+
+            if (exportBtn) {
+                exportBtn.onclick = handleExport;
+            }
+
+            if (importBtn && fileInput) {
+                importBtn.onclick = () => fileInput.click();
+
+                fileInput.onchange = (event) => {
+                    const file = event.target.files[0];
+                    if (!file) return;
+
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        try {
+                            const contents = e.target.result;
+                            const data = JSON.parse(contents);
+
+                            // Basic validation
+                            if (!data.elements) {
+                                throw new Error("Invalid Excalidraw file");
+                            }
+
+                            if (excalidrawAPI) {
+                                excalidrawAPI.updateScene({
+                                    elements: data.elements,
+                                    appState: data.appState,
+                                    files: data.files
+                                });
+                                // Mark as dirty and save
+                                isDirtyRef.current = true;
+                                debouncedSave();
+                                showToast('Imported successfully!', 'success');
+                            }
+                        } catch (err) {
+                            console.error("Import error:", err);
+                            showToast('Failed to import file. Invalid format.', 'error');
+                        }
+                        // Reset input so same file can be selected again
+                        fileInput.value = '';
+                    };
+                    reader.readAsText(file);
+                };
+            }
+        }, [excalidrawAPI, handleExport, debouncedSave]);
 
         if (isLoading) {
             return React.createElement(
