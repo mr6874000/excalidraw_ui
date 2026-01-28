@@ -312,9 +312,29 @@
             const listEl = document.getElementById('participants-list');
             listEl.classList.remove('d-none');
             // Simple avatar list
-            listEl.innerHTML = users.map(u =>
-                `<span class="badge rounded-pill bg-primary" title="${u}">${u[0].toUpperCase()}</span>`
-            ).join('');
+            listEl.innerHTML = users.map(u => {
+                const isMe = u === myName;
+                if (isMe) {
+                    return `
+                        <div class="dropdown">
+                            <span class="badge rounded-pill bg-success dropdown-toggle" 
+                                  style="cursor: pointer; border: 2px solid #fff; box-shadow: 0 0 0 1px #28a745;" 
+                                  data-bs-toggle="dropdown" 
+                                  aria-expanded="false"
+                                  title="${u} (You)">
+                                ${u[0].toUpperCase()}
+                            </span>
+                            <ul class="dropdown-menu dropdown-menu-end shadow">
+                                <li><h6 class="dropdown-header">${u} (You)</h6></li>
+                                <li><hr class="dropdown-divider"></li>
+                                <li><a class="dropdown-item text-danger" href="#" onclick="signOutSession(); return false;">
+                                    <i class="fas fa-sign-out-alt me-2"></i>Sign Out
+                                </a></li>
+                            </ul>
+                        </div>`;
+                }
+                return `<span class="badge rounded-pill bg-primary" title="${u}">${u[0].toUpperCase()}</span>`;
+            }).join('');
         });
 
         // Update UI
@@ -328,22 +348,91 @@
         };
     }
 
+    function initLiveSession(name) {
+        if (!name) return;
+
+        localStorage.setItem('excalidraw-name', name);
+        myName = name;
+
+        // Ensure modal is hidden
+        const modalEl = document.getElementById('joinModal');
+        const modal = bootstrap.Modal.getInstance(modalEl);
+        if (modal) modal.hide();
+
+        // Connect
+        if (window.startLiveSession) {
+            window.startLiveSession(name);
+        } else {
+            // Wait for React app to be ready (startLiveSession is defined in App component)
+            const checkInterval = setInterval(() => {
+                if (window.startLiveSession) {
+                    window.startLiveSession(name);
+                    clearInterval(checkInterval);
+                }
+            }, 100);
+        }
+
+        // Update URL if not already live
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('live') !== 'true') {
+            const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname + '?live=true';
+            window.history.pushState({ path: newUrl }, '', newUrl);
+        }
+    }
+
+    function signOutSession() {
+        if (socket) {
+            socket.disconnect();
+            socket = null;
+        }
+        localStorage.removeItem('excalidraw-name');
+        myName = '';
+
+        // Reset UI
+        const listEl = document.getElementById('participants-list');
+        listEl.classList.add('d-none');
+        listEl.innerHTML = '';
+
+        const btn = document.getElementById('go-live-btn');
+        btn.innerHTML = '<i class="fas fa-broadcast-tower"></i> Go Live';
+        btn.classList.remove('btn-drawing-success');
+        btn.classList.add('btn-drawing-secondary');
+        btn.onclick = () => {
+            if (myName) {
+                initLiveSession(myName);
+            } else {
+                const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('joinModal'));
+                modal.show();
+            }
+        };
+
+        // Show modal again after clearing name
+        const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('joinModal'));
+        document.getElementById('join-name-input').value = '';
+        modal.show();
+    }
+
     // Init Logic
     document.addEventListener('DOMContentLoaded', () => {
         const urlParams = new URLSearchParams(window.location.search);
         const isLive = urlParams.get('live') === 'true';
-        const joinModal = new bootstrap.Modal(document.getElementById('joinModal'));
         const nameInput = document.getElementById('join-name-input');
         const joinBtn = document.getElementById('join-btn');
+        const modalEl = document.getElementById('joinModal');
 
-        if (isLive) {
-            joinModal.show();
+        if (isLive && myName) {
+            initLiveSession(myName);
+        } else if (isLive) {
+            bootstrap.Modal.getOrCreateInstance(modalEl).show();
         }
 
         document.getElementById('go-live-btn').onclick = () => {
             if (!socket) {
-                // If not already live, start the flow
-                joinModal.show();
+                if (myName) {
+                    initLiveSession(myName);
+                } else {
+                    bootstrap.Modal.getOrCreateInstance(modalEl).show();
+                }
             }
         };
 
@@ -368,7 +457,6 @@
         const updateFullscreenButton = () => {
             if (document.fullscreenElement) {
                 fullscreenBtn.innerHTML = '<i class="fas fa-compress"></i> Exit Full Screen';
-                // Adjust style lightly for full screen if needed, e.g. move tools further out?
             } else {
                 fullscreenBtn.innerHTML = '<i class="fas fa-expand"></i> Full Screen';
             }
@@ -379,21 +467,8 @@
         joinBtn.onclick = () => {
             const name = nameInput.value.trim();
             if (!name) return;
-
-            localStorage.setItem('excalidraw-name', name);
-            myName = name;
-            joinModal.hide();
-
-            // Connect
-            // We need excalidrawAPI, handled in React component effect or via global
-            // For now, we set a flag and the React component will pick it up
-            window.startLiveSession(name);
-
-            // Update URL
-            if (!isLive) {
-                const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname + '?live=true';
-                window.history.pushState({ path: newUrl }, '', newUrl);
-            }
+            bootstrap.Modal.getOrCreateInstance(modalEl).hide();
+            initLiveSession(name);
         };
 
         if (myName) nameInput.value = myName;
