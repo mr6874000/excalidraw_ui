@@ -1,3 +1,6 @@
 Flask
-Flask-SQLAlchemy
+flask-sqlalchemy
 requests
+python-dotenv
+flask-socketio
+eventlet

@@ -21,13 +21,29 @@
     }
 
     /* Tools positioned relative to the wrapper, not the window */
-    .header-tools {
+    .bottom-tools {
         position: absolute;
-        top: 10px;
+        bottom: 10px;
         right: 10px;
+        /* Changed from left: 10px */
+        left: auto;
         z-index: 10;
         display: flex;
         gap: 10px;
+    }
+
+    /* Hide the default Excalidraw Help button */
+    .excalidraw .layer-ui__wrapper .footer-center {
+        display: none !important;
+    }
+
+    .excalidraw .App-bottom-bar section {
+        /* Sometimes help is here */
+    }
+
+    button[aria-label="Help"],
+    button[title="Help"] {
+        display: none !important;
     }
 
     .btn-drawing {
@@ -86,9 +102,23 @@
     </a>
 </div>
 
-<div class="excalidraw-wrapper">
-    <div class="header-tools">
+<div class="excalidraw-wrapper" id="excalidraw-container">
+    <div class="bottom-tools">
+        <div id="participants-list"
+            class="d-none bg-white p-2 rounded shadow-sm border me-2 d-flex align-items-center gap-2">
+            <!-- Participants will be injected here -->
+        </div>
+        <button id="go-live-btn" class="btn-drawing btn-drawing-secondary"><i class="fas fa-broadcast-tower"></i> Go
+            Live</button>
+        <button id="import-btn" class="btn-drawing btn-drawing-secondary"><i class="fas fa-file-import"></i>
+            Import</button>
+        <button id="export-btn" class="btn-drawing btn-drawing-secondary"><i class="fas fa-file-export"></i>
+            Export</button>
         <button id="save-btn" class="btn-drawing btn-drawing-primary"><i class="fas fa-save"></i> Save Changes</button>
+        <button id="fullscreen-btn" class="btn-drawing btn-drawing-secondary"><i class="fas fa-expand"></i> Full
+            Screen</button>
+        <!-- Hidden file input for import -->
+        <input type="file" id="file-input" style="display: none;" accept=".excalidraw,.json">
     </div>
 
     <div id="root"></div>
@@ -106,6 +136,26 @@
         </div>
     </div>
 </div>
+
+<!-- Join Modal -->
+<div class="modal fade" id="joinModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static"
+    data-bs-keyboard="false">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Join Live Session</h5>
+            </div>
+            <div class="modal-body">
+                <p>Enter your name to join the live collaboration.</p>
+                <input type="text" id="join-name-input" class="form-control" placeholder="Your Name" autofocus>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-primary" id="join-btn">Join</button>
+            </div>
+        </div>
+    </div>
+</div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -116,6 +166,10 @@
 <script crossorigin src="{{ url_for('static', filename='vendor/react.production.min.js') }}"></script>
 <script crossorigin src="{{ url_for('static', filename='vendor/react-dom.production.min.js') }}"></script>
 <script crossorigin src="{{ url_for('static', filename='vendor/excalidraw.production.min.js') }}"></script>
+<!-- Socket.IO -->
+<script src="https://cdn.socket.io/4.7.4/socket.io.min.js"
+    integrity="sha384-Gr6Lu2Ajx28mzwyVR8CFkULdCU7kMlZ9UthllibdOSo6qAiN+yXNHqtgdTvFXMT4"
+    crossorigin="anonymous"></script>>
 
 <script>
     // Name Editing Logic
@@ -223,6 +277,204 @@
     const ExcalidrawLib = window.ExcalidrawLib || null;
     const Excalidraw = ExcalidrawLib ? ExcalidrawLib.Excalidraw : null;
 
+    // --- SOCKET LOGIC ---
+    let socket = null;
+    let isReceivingUpdate = false;
+    let myName = localStorage.getItem('excalidraw-name') || '';
+
+    function connectSocket(userName, excalidrawAPI) {
+        if (socket) return;
+
+        socket = io();
+        const roomId = "{{ drawing.id }}";
+
+        socket.on('connect', () => {
+            console.log("Connected to socket");
+            socket.emit('join', { room: roomId, name: userName });
+        });
+
+        socket.on('update_scene', (data) => {
+            if (!excalidrawAPI) return;
+            // Prevent echo loop
+            isReceivingUpdate = true;
+            try {
+                excalidrawAPI.updateScene({
+                    elements: data.elements,
+                    appState: data.appState
+                });
+            } finally {
+                // Small timeout to ensure onChange doesn't fire immediately after this
+                setTimeout(() => { isReceivingUpdate = false; }, 50);
+            }
+        });
+
+        socket.on('room_users', (users) => {
+            const listEl = document.getElementById('participants-list');
+            listEl.classList.remove('d-none');
+            // Simple avatar list
+            listEl.innerHTML = users.map(u => {
+                const isMe = u === myName;
+                if (isMe) {
+                    return `
+                        <div class="dropdown">
+                            <span class="badge rounded-pill bg-success dropdown-toggle" 
+                                  style="cursor: pointer; border: 2px solid #fff; box-shadow: 0 0 0 1px #28a745;" 
+                                  data-bs-toggle="dropdown" 
+                                  aria-expanded="false"
+                                  title="${u} (You)">
+                                ${u[0].toUpperCase()}
+                            </span>
+                            <ul class="dropdown-menu dropdown-menu-end shadow">
+                                <li><h6 class="dropdown-header">${u} (You)</h6></li>
+                                <li><hr class="dropdown-divider"></li>
+                                <li><a class="dropdown-item text-danger" href="#" onclick="signOutSession(); return false;">
+                                    <i class="fas fa-sign-out-alt me-2"></i>Sign Out
+                                </a></li>
+                            </ul>
+                        </div>`;
+                }
+                return `<span class="badge rounded-pill bg-primary" title="${u}">${u[0].toUpperCase()}</span>`;
+            }).join('');
+        });
+
+        // Update UI
+        const btn = document.getElementById('go-live-btn');
+        btn.innerHTML = '<i class="fas fa-link"></i> Copy Link';
+        btn.classList.remove('btn-drawing-secondary');
+        btn.classList.add('btn-drawing-success');
+        btn.onclick = () => {
+            const url = window.location.href;
+            navigator.clipboard.writeText(url).then(() => showToast('Link copied!', 'success'));
+        };
+    }
+
+    function initLiveSession(name) {
+        if (!name) return;
+
+        localStorage.setItem('excalidraw-name', name);
+        myName = name;
+
+        // Ensure modal is hidden
+        const modalEl = document.getElementById('joinModal');
+        const modal = bootstrap.Modal.getInstance(modalEl);
+        if (modal) modal.hide();
+
+        // Connect
+        if (window.startLiveSession) {
+            window.startLiveSession(name);
+        } else {
+            // Wait for React app to be ready (startLiveSession is defined in App component)
+            const checkInterval = setInterval(() => {
+                if (window.startLiveSession) {
+                    window.startLiveSession(name);
+                    clearInterval(checkInterval);
+                }
+            }, 100);
+        }
+
+        // Update URL if not already live
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('live') !== 'true') {
+            const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname + '?live=true';
+            window.history.pushState({ path: newUrl }, '', newUrl);
+        }
+    }
+
+    function signOutSession() {
+        if (socket) {
+            socket.disconnect();
+            socket = null;
+        }
+        localStorage.removeItem('excalidraw-name');
+        myName = '';
+
+        // Reset UI
+        const listEl = document.getElementById('participants-list');
+        listEl.classList.add('d-none');
+        listEl.innerHTML = '';
+
+        const btn = document.getElementById('go-live-btn');
+        btn.innerHTML = '<i class="fas fa-broadcast-tower"></i> Go Live';
+        btn.classList.remove('btn-drawing-success');
+        btn.classList.add('btn-drawing-secondary');
+        btn.onclick = () => {
+            if (myName) {
+                initLiveSession(myName);
+            } else {
+                const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('joinModal'));
+                modal.show();
+            }
+        };
+
+        // Show modal again after clearing name
+        const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('joinModal'));
+        document.getElementById('join-name-input').value = '';
+        modal.show();
+    }
+
+    // Init Logic
+    document.addEventListener('DOMContentLoaded', () => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const isLive = urlParams.get('live') === 'true';
+        const nameInput = document.getElementById('join-name-input');
+        const joinBtn = document.getElementById('join-btn');
+        const modalEl = document.getElementById('joinModal');
+
+        if (isLive && myName) {
+            initLiveSession(myName);
+        } else if (isLive) {
+            bootstrap.Modal.getOrCreateInstance(modalEl).show();
+        }
+
+        document.getElementById('go-live-btn').onclick = () => {
+            if (!socket) {
+                if (myName) {
+                    initLiveSession(myName);
+                } else {
+                    bootstrap.Modal.getOrCreateInstance(modalEl).show();
+                }
+            }
+        };
+
+        // Full Screen Logic
+        const fullscreenBtn = document.getElementById('fullscreen-btn');
+        const container = document.getElementById('excalidraw-container');
+
+        fullscreenBtn.onclick = () => {
+            if (!document.fullscreenElement) {
+                if (container.requestFullscreen) {
+                    container.requestFullscreen();
+                } else if (container.webkitRequestFullscreen) {
+                    container.webkitRequestFullscreen();
+                }
+            } else {
+                if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                }
+            }
+        };
+
+        const updateFullscreenButton = () => {
+            if (document.fullscreenElement) {
+                fullscreenBtn.innerHTML = '<i class="fas fa-compress"></i> Exit Full Screen';
+            } else {
+                fullscreenBtn.innerHTML = '<i class="fas fa-expand"></i> Full Screen';
+            }
+        };
+
+        document.addEventListener('fullscreenchange', updateFullscreenButton);
+
+        joinBtn.onclick = () => {
+            const name = nameInput.value.trim();
+            if (!name) return;
+            bootstrap.Modal.getOrCreateInstance(modalEl).hide();
+            initLiveSession(name);
+        };
+
+        if (myName) nameInput.value = myName;
+    });
+
+
     function App() {
         const [excalidrawAPI, setExcalidrawAPI] = useState(null);
         const [initialData, setInitialData] = useState(null);
@@ -240,6 +492,19 @@
             window.addEventListener('beforeunload', handleBeforeUnload);
             return () => window.removeEventListener('beforeunload', handleBeforeUnload);
         }, []);
+
+        // Expose startLiveSession to global scope so plain JS can call it
+        useEffect(() => {
+            window.startLiveSession = (name) => {
+                if (excalidrawAPI) {
+                    connectSocket(name, excalidrawAPI);
+                }
+            };
+            // If we closed the modal but api wasn't ready, we might need to check ?? 
+            // Actually the modal waits for user input.
+            // If the user already input name and clicked join, and then we loaded...
+        }, [excalidrawAPI]);
+
 
         // Error Boundary UI
         if (!Excalidraw) {
@@ -340,6 +605,89 @@
             };
         }, [saveFile]);
 
+        // Export Logic
+        const handleExport = useCallback(() => {
+            if (!excalidrawAPI) return;
+
+            const elements = excalidrawAPI.getSceneElements();
+            const appState = excalidrawAPI.getAppState();
+            const files = excalidrawAPI.getFiles();
+
+            const data = {
+                type: "excalidraw",
+                version: 2,
+                source: window.location.origin,
+                elements,
+                appState: {
+                    viewBackgroundColor: appState.viewBackgroundColor,
+                    currentItemFontFamily: appState.currentItemFontFamily,
+                },
+                files
+            };
+
+            const fileName = `excalidraw-{{ drawing.name }}-${new Date().toISOString().slice(0, 10)}.excalidraw`;
+            const json = JSON.stringify(data, null, 2);
+            const blob = new Blob([json], { type: "application/json" });
+            const href = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = href;
+            link.download = fileName;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }, [excalidrawAPI]);
+
+        // Import Logic
+        useEffect(() => {
+            const importBtn = document.getElementById('import-btn');
+            const fileInput = document.getElementById('file-input');
+            const exportBtn = document.getElementById('export-btn');
+
+            if (exportBtn) {
+                exportBtn.onclick = handleExport;
+            }
+
+            if (importBtn && fileInput) {
+                importBtn.onclick = () => fileInput.click();
+
+                fileInput.onchange = (event) => {
+                    const file = event.target.files[0];
+                    if (!file) return;
+
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        try {
+                            const contents = e.target.result;
+                            const data = JSON.parse(contents);
+
+                            // Basic validation
+                            if (!data.elements) {
+                                throw new Error("Invalid Excalidraw file");
+                            }
+
+                            if (excalidrawAPI) {
+                                excalidrawAPI.updateScene({
+                                    elements: data.elements,
+                                    appState: data.appState,
+                                    files: data.files
+                                });
+                                // Mark as dirty and save
+                                isDirtyRef.current = true;
+                                debouncedSave();
+                                showToast('Imported successfully!', 'success');
+                            }
+                        } catch (err) {
+                            console.error("Import error:", err);
+                            showToast('Failed to import file. Invalid format.', 'error');
+                        }
+                        // Reset input so same file can be selected again
+                        fileInput.value = '';
+                    };
+                    reader.readAsText(file);
+                };
+            }
+        }, [excalidrawAPI, handleExport, debouncedSave]);
+
         if (isLoading) {
             return React.createElement(
                 "div",
@@ -355,6 +703,23 @@
                 excalidrawAPI: (api) => setExcalidrawAPI(api),
                 initialData: initialData,
                 onChange: (elements, appState, files) => {
+                    // Update server via socket if live
+                    if (socket && !isReceivingUpdate) {
+                        // We probably want to debounce this too, but for live collab we want low latency.
+                        // Maybe throttle to 30ms or something.
+                        // For now, let's just emit (Excalidraw updates are frequent, so might be heavy)
+                        // Let's debounce slightly or check if valid change.
+
+                        // Note: We are NOT sending files over socket yet, just elements.
+                        socket.emit('update_scene', {
+                            room: "{{ drawing.id }}",
+                            elements,
+                            appState: {
+                                viewBackgroundColor: appState.viewBackgroundColor
+                            }
+                        });
+                    }
+
                     // Start auto-save on any change
                     isDirtyRef.current = true;
                     debouncedSave();
