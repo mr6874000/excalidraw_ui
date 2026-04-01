@@ -67,28 +67,33 @@
     .excalidraw .App-menu_top__left {
         display: none !important;
     }
+
+    /* Hide Excalidraw Library Button */
+    .excalidraw .App-toolbar__extra {
+        display: none !important;
+    }
 </style>
+
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="{{ url_for('index') }}">Home</a></li>
+        <li class="breadcrumb-item active" aria-current="page">{{ drawing.name }}</li>
+    </ol>
+</nav>
 
 <div class="d-flex justify-content-between align-items-center mb-3">
     <div>
-        <h2 class="mb-0">
-            <i class="fas fa-pen-fancy me-2"></i>Whiteboard
-            <span id="save-status" class="ms-3 text-muted align-middle"
-                style="font-size: 0.6em; font-weight: normal; display: none;"></span>
-        </h2>
-        <div class="d-flex align-items-center">
-            <p class="text-muted mb-0 me-2">Brainstorming session for</p>
+        <h2 class="mb-0 d-flex align-items-center">
             <div id="name-container">
                 <strong id="drawing-name-display" style="cursor: pointer; border-bottom: 1px dashed #ccc;"
                     title="Double-click to edit name">{{ drawing.name }}</strong>
                 <input type="text" id="drawing-name-input" class="form-control form-control-sm"
-                    style="display: none; width: auto; max-width: 300px;" value="{{ drawing.name }}">
+                    style="display: none; width: auto; max-width: 300px; font-size: 1.5rem; font-weight: 500;" value="{{ drawing.name }}">
             </div>
-        </div>
+            <span id="save-status" class="ms-3 text-muted align-middle"
+                style="font-size: 0.4em; font-weight: normal; display: none;"></span>
+        </h2>
     </div>
-    <a href="{{ url_for('excalidraw_list') }}" class="btn btn-outline-secondary">
-        <i class="fas fa-arrow-left"></i> Back to List
-    </a>
 </div>
 
 <div class="excalidraw-wrapper" id="excalidraw-wrapper">
@@ -111,7 +116,7 @@
                 <div class="modal-body">
                     <div class="form-check form-switch mb-3">
                         <input class="form-check-input" type="checkbox" id="readonlyToggle" checked>
-                        <label class="form-check-label" for="readonlyToggle">Read-only link</label>
+                        <label class="form-check-label" for="readonlyToggle">Read-only link (Collaborative)</label>
                     </div>
                     <div class="input-group">
                         <input type="text" class="form-control" id="shareLink" readonly>
@@ -149,6 +154,7 @@
     window.process = { env: { NODE_ENV: 'production' } };
 </script>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.1/socket.io.js"></script>
 <script crossorigin src="{{ url_for('static', filename='vendor/react.production.min.js') }}"></script>
 <script crossorigin src="{{ url_for('static', filename='vendor/react-dom.production.min.js') }}"></script>
 <script crossorigin src="{{ url_for('static', filename='vendor/excalidraw.production.min.js') }}"></script>
@@ -299,6 +305,18 @@
         });
     }
 
+    // --- SocketIO Collaboration Logic ---
+    const socket = io();
+    const DRAWING_ID = {{ drawing.id }};
+
+    // Join drawing room immediately to receive updates from others
+    socket.emit('join_drawing', { drawing_id: DRAWING_ID });
+
+    // Ensure we leave room properly
+    window.addEventListener('beforeunload', () => {
+        socket.emit('leave_drawing', { drawing_id: DRAWING_ID });
+    });
+
     // --- Excalidraw Logic ---
 
     // Debugging logs
@@ -329,6 +347,7 @@
         const [isLoading, setIsLoading] = useState(true);
         const lastSavedRef = useRef(null);
         const isDirtyRef = useRef(false);
+        const isUpdatingFromSocket = useRef(false);
 
         useEffect(() => {
             const handleBeforeUnload = (e) => {
@@ -426,6 +445,40 @@
             saveFile();
         }, 1000), [saveFile]); // Debounce for 1 second
 
+        // Listen for server updates
+        useEffect(() => {
+            if (!excalidrawAPI) return;
+
+            const handleServerUpdate = (data) => {
+                isUpdatingFromSocket.current = true;
+
+                try {
+                    // Get current elements and appState
+                    const currentElements = excalidrawAPI.getSceneElements();
+
+                    // Note: In a fully CRDT-compliant app, you'd use a reconciliation algorithm here
+                    // Excalidraw's updateScene does handle this decently well based on element version
+                    excalidrawAPI.updateScene({
+                        elements: data.elements,
+                        appState: data.appState,
+                    });
+                } catch (e) {
+                    console.error("Error applying scene update", e);
+                } finally {
+                    // Small timeout to allow onChange to fire and ignore it
+                    setTimeout(() => {
+                        isUpdatingFromSocket.current = false;
+                    }, 100);
+                }
+            };
+
+            socket.on('server_update', handleServerUpdate);
+
+            return () => {
+                socket.off('server_update', handleServerUpdate);
+            };
+        }, [excalidrawAPI]);
+
         // Hook up manual save button & shortcuts
         useEffect(() => {
             const saveBtn = document.getElementById('save-btn');
@@ -460,6 +513,10 @@
                 excalidrawAPI: (api) => setExcalidrawAPI(api),
                 initialData: initialData,
                 onChange: (elements, appState, files) => {
+                    if (isUpdatingFromSocket.current) {
+                        return; // Ignore updates that come from the socket
+                    }
+
                     // Compare with last saved to genuinely know if it's dirty
                     const dataStr = JSON.stringify({
                         elements,
@@ -474,7 +531,17 @@
                         isDirtyRef.current = true;
                         lastSavedRef.current = dataStr;
                         debouncedSave();
+
+                        // Broadcast to peers
+                        socket.emit('client_update', {
+                            drawing_id: DRAWING_ID,
+                            elements: elements,
+                            appState: appState
+                        });
                     }
+                },
+                onPointerUpdate: (payload) => {
+                    // Optional: emit pointer updates
                 },
                 name: "Excalidraw Drawing - {{ drawing.name }}", // Note: This might not auto-update inside the React component if the scope name changes, but that's fine for now.
                 UIOptions: { canvasActions: { loadScene: false, export: false } }

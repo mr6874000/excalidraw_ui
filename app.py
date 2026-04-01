@@ -11,6 +11,7 @@ from flask import (
     flash, send_file, jsonify, abort
 )
 from flask_sqlalchemy import SQLAlchemy
+from flask_socketio import SocketIO, join_room, leave_room, emit
 from sqlalchemy import inspect
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -27,6 +28,10 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = 'a-very-secret-key-for-flash-messages'
 app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{DB_PATH}' # This now points to an absolute path
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# Initialize SocketIO
+socketio = SocketIO(app, cors_allowed_origins="*")
+
 APP_VERSION = "v?.?.?" # Default if file is missing
 try:
     version_file_path = os.path.join(basedir, '.version')
@@ -611,6 +616,38 @@ def api_pull_status():
     return jsonify(status_copy)
 
 
+# --- SocketIO Real-Time Collaboration Events ---
+
+@socketio.on('join_drawing')
+def handle_join_drawing(data):
+    """Client joins a specific drawing room."""
+    drawing_id = data.get('drawing_id')
+    if drawing_id:
+        room = f"drawing_{drawing_id}"
+        join_room(room)
+        # Optional: emit to others that someone joined
+
+@socketio.on('leave_drawing')
+def handle_leave_drawing(data):
+    """Client leaves a specific drawing room."""
+    drawing_id = data.get('drawing_id')
+    if drawing_id:
+        room = f"drawing_{drawing_id}"
+        leave_room(room)
+
+@socketio.on('client_update')
+def handle_client_update(data):
+    """
+    Receives drawing updates (elements, appState pointer updates, etc.)
+    from one client and broadcasts to everyone else in the same room.
+    """
+    drawing_id = data.get('drawing_id')
+    if drawing_id:
+        room = f"drawing_{drawing_id}"
+        # Broadcast the update to all clients in the room EXCEPT the sender
+        emit('server_update', data, room=room, include_self=False)
+
+
 # --- 3. SEEDING LOGIC ---
 
 def seed_nodes():
@@ -667,4 +704,4 @@ if __name__ == '__main__':
         seed_nodes()
 
     # Host='0.0.0.0' makes it accessible on your network
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    socketio.run(app, debug=True, host='0.0.0.0', port=5000)

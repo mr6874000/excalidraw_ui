@@ -54,15 +54,28 @@
         }
 </style>
 
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="{{ url_for('index') }}">Home</a></li>
+        <li class="breadcrumb-item active" aria-current="page">{{ drawing.name }} (Read-Only)</li>
+    </ol>
+</nav>
+
 <div class="d-flex justify-content-between align-items-center mb-3">
     <div>
-        <h2 class="mb-0"><i class="fas fa-eye me-2"></i>{{ drawing.name }} (Read-Only)</h2>
-        <p class="text-muted mb-0">Directory: <strong>{{ drawing.directory }}</strong></p>
+        <h2 class="mb-0">{{ drawing.name }} <span class="badge bg-secondary ms-2" style="font-size: 0.5em; vertical-align: middle;">Read-Only</span></h2>
+        <span id="live-indicator" class="badge bg-success" style="display: none; font-size: 0.8em;"><i class="fas fa-satellite-dish blink"></i> Live Data Received</span>
     </div>
-    <a href="{{ url_for('excalidraw_list') }}" class="btn btn-outline-secondary">
-        <i class="fas fa-arrow-left"></i> Back to List
-    </a>
 </div>
+
+<style>
+@keyframes blinker {
+  50% { opacity: 0; }
+}
+.blink {
+  animation: blinker 1.5s linear infinite;
+}
+</style>
 
     <div class="excalidraw-wrapper" id="excalidraw-wrapper">
         <div class="header-tools">
@@ -77,11 +90,25 @@
     window.process = { env: { NODE_ENV: 'production' } };
 </script>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.1/socket.io.js"></script>
 <script crossorigin src="{{ url_for('static', filename='vendor/react.production.min.js') }}"></script>
 <script crossorigin src="{{ url_for('static', filename='vendor/react-dom.production.min.js') }}"></script>
 <script crossorigin src="{{ url_for('static', filename='vendor/excalidraw.production.min.js') }}"></script>
 
 <script>
+    // --- SocketIO Collaboration Logic (Listener Mode) ---
+    const socket = io();
+    const DRAWING_ID = {{ drawing.id }};
+
+    socket.emit('join_drawing', { drawing_id: DRAWING_ID });
+
+    window.addEventListener('beforeunload', () => {
+        socket.emit('leave_drawing', { drawing_id: DRAWING_ID });
+    });
+
+    const liveIndicator = document.getElementById('live-indicator');
+    let liveIndicatorTimeout;
+
     // --- Fullscreen Logic ---
     const fullscreenBtn = document.getElementById('fullscreen-btn');
     const wrapper = document.getElementById('excalidraw-wrapper');
@@ -119,6 +146,7 @@
     const Excalidraw = ExcalidrawLib ? ExcalidrawLib.Excalidraw : null;
 
     function App() {
+        const [excalidrawAPI, setExcalidrawAPI] = useState(null);
         const [initialData, setInitialData] = useState(null);
         const [isLoading, setIsLoading] = useState(true);
 
@@ -138,6 +166,35 @@
                 .finally(() => setIsLoading(false));
         }, []);
 
+        // Listen for server updates to keep canvas live
+        useEffect(() => {
+            if (!excalidrawAPI) return;
+
+            const handleServerUpdate = (data) => {
+                // Flash the live indicator
+                liveIndicator.style.display = 'inline-block';
+                clearTimeout(liveIndicatorTimeout);
+                liveIndicatorTimeout = setTimeout(() => {
+                    liveIndicator.style.display = 'none';
+                }, 3000);
+
+                try {
+                    excalidrawAPI.updateScene({
+                        elements: data.elements,
+                        appState: data.appState,
+                    });
+                } catch (e) {
+                    console.error("Error applying scene update", e);
+                }
+            };
+
+            socket.on('server_update', handleServerUpdate);
+
+            return () => {
+                socket.off('server_update', handleServerUpdate);
+            };
+        }, [excalidrawAPI]);
+
         if (isLoading) {
             return React.createElement("div", { style: { padding: "20px" } }, "Loading drawing...");
         }
@@ -146,6 +203,7 @@
             "div",
             { style: { height: "100%" } },
             React.createElement(Excalidraw, {
+                excalidrawAPI: (api) => setExcalidrawAPI(api),
                 initialData: initialData,
                 viewModeEnabled: true,
                 zenModeEnabled: true,
