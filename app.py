@@ -5,6 +5,7 @@ import tempfile
 import requests
 import threading
 import json  # <-- Added import
+import io
 from flask import (
     Flask, render_template, request, redirect, url_for,
     flash, send_file, jsonify, abort
@@ -277,6 +278,90 @@ def create_excalidraw():
         flash(f'Error creating drawing: {e}', 'error')
         return redirect(url_for('excalidraw_list'))
 
+@app.route('/excalidraw/<int:id>/delete', methods=['POST'])
+def delete_excalidraw(id):
+    """Deletes an Excalidraw drawing."""
+    drawing = db.get_or_404(Excalidraw, id)
+    try:
+        drawing_name = drawing.name
+        db.session.delete(drawing)
+        db.session.commit()
+        flash(f'Drawing "{drawing_name}" deleted successfully.', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error deleting drawing: {e}', 'error')
+    return redirect(url_for('excalidraw_list'))
+
+@app.route('/excalidraw/<int:id>/export', methods=['GET'])
+def export_excalidraw(id):
+    """Exports an Excalidraw drawing as a standard .excalidraw JSON file."""
+    drawing = db.get_or_404(Excalidraw, id)
+
+    # Reconstruct the standard excalidraw format
+    export_data = {
+        "type": "excalidraw",
+        "version": 2,
+        "source": "excalidraw_ui",
+        "elements": drawing.data.get("elements", []),
+        "appState": drawing.data.get("appState", {}),
+        "files": drawing.data.get("files", {})
+    }
+
+    # Send the JSON file directly from memory
+    json_str = json.dumps(export_data)
+    mem_file = io.BytesIO(json_str.encode('utf-8'))
+
+    filename = f"{drawing.name.replace(' ', '_')}.excalidraw"
+    return send_file(mem_file, as_attachment=True, download_name=filename, mimetype='application/json')
+
+@app.route('/excalidraw/import', methods=['POST'])
+def import_excalidraw():
+    """Imports an Excalidraw drawing from a .excalidraw file."""
+    file = request.files.get('drawing_file')
+    if not file or file.filename == '':
+        flash('No file selected.', 'error')
+        return redirect(url_for('excalidraw_list'))
+
+    if not file.filename.endswith('.excalidraw'):
+        flash('Invalid file type. Please upload a .excalidraw file.', 'error')
+        return redirect(url_for('excalidraw_list'))
+
+    try:
+        file_content = file.read().decode('utf-8')
+        json_data = json.loads(file_content)
+
+        # Verify it's likely an excalidraw file
+        if json_data.get('type') != 'excalidraw' and 'elements' not in json_data:
+             flash('Invalid Excalidraw file format.', 'error')
+             return redirect(url_for('excalidraw_list'))
+
+        # Extract name from filename, without extension
+        name = file.filename.rsplit('.', 1)[0]
+        directory = '/'
+
+        # Prepare the standard data layout
+        data = {
+            'name': name,
+            'directory': directory,
+            'elements': json_data.get('elements', []),
+            'appState': json_data.get('appState', {}),
+            'files': json_data.get('files', {})
+        }
+
+        new_drawing = Excalidraw(data=data)
+        db.session.add(new_drawing)
+        db.session.commit()
+
+        flash(f'Drawing "{name}" imported successfully!', 'success')
+        return redirect(url_for('view_excalidraw', id=new_drawing.id))
+
+    except json.JSONDecodeError:
+         flash('Invalid JSON in uploaded file.', 'error')
+    except Exception as e:
+         db.session.rollback()
+         flash(f'Error importing drawing: {e}', 'error')
+
+    return redirect(url_for('excalidraw_list'))
 
 
 @app.route('/excalidraw/<int:id>')

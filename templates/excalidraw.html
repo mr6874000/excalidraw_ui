@@ -258,6 +258,17 @@
                 .then(data => {
                     if (data && Object.keys(data).length > 0) {
                         setInitialData(data);
+
+                        // Set lastSavedRef to the initial loaded state
+                        const dataStr = JSON.stringify({
+                            elements: data.elements || [],
+                            appState: {
+                                viewBackgroundColor: data.appState?.viewBackgroundColor,
+                                currentItemFontFamily: data.appState?.currentItemFontFamily,
+                            },
+                            files: data.files || {}
+                        });
+                        lastSavedRef.current = dataStr;
                     }
                 })
                 .catch(err => console.error("Error loading Excalidraw data:", err))
@@ -282,11 +293,6 @@
 
             const dataStr = JSON.stringify(data);
 
-            if (dataStr === lastSavedRef.current) {
-                isDirtyRef.current = false;
-                return;
-            }
-
             const statusEl = document.getElementById('save-status');
             statusEl.innerText = "Saving...";
             statusEl.style.display = "inline-block";
@@ -301,7 +307,6 @@
                 });
                 const result = await res.json();
                 if (result.status === 'success') {
-                    lastSavedRef.current = dataStr;
                     statusEl.innerText = ""; // Clear text status
                     statusEl.style.display = "none";
                     isDirtyRef.current = false;
@@ -355,9 +360,21 @@
                 excalidrawAPI: (api) => setExcalidrawAPI(api),
                 initialData: initialData,
                 onChange: (elements, appState, files) => {
-                    // Start auto-save on any change
-                    isDirtyRef.current = true;
-                    debouncedSave();
+                    // Compare with last saved to genuinely know if it's dirty
+                    const dataStr = JSON.stringify({
+                        elements,
+                        appState: {
+                            viewBackgroundColor: appState.viewBackgroundColor,
+                            currentItemFontFamily: appState.currentItemFontFamily,
+                        },
+                        files
+                    });
+
+                    if (dataStr !== lastSavedRef.current) {
+                        isDirtyRef.current = true;
+                        lastSavedRef.current = dataStr;
+                        debouncedSave();
+                    }
                 },
                 name: "Excalidraw Drawing - {{ drawing.name }}", // Note: This might not auto-update inside the React component if the scope name changes, but that's fine for now.
                 UIOptions: { canvasActions: { loadScene: false } }
