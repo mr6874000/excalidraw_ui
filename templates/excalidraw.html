@@ -68,8 +68,11 @@
         display: none !important;
     }
 
-    /* Hide Excalidraw Library Button */
-    .excalidraw .App-toolbar__extra {
+    /* More robust ways to hide the Library Button */
+    .excalidraw .App-toolbar__extra,
+    .excalidraw .layer-ui__library,
+    .excalidraw [aria-label="Library"],
+    .excalidraw .sidebar-trigger {
         display: none !important;
     }
 </style>
@@ -98,6 +101,7 @@
 
 <div class="excalidraw-wrapper" id="excalidraw-wrapper">
     <div class="header-tools">
+        <button id="live-btn" class="btn-drawing btn-drawing-primary"><i class="fas fa-broadcast-tower"></i> Go Live</button>
         <button id="share-btn" class="btn-drawing btn-drawing-secondary" data-bs-toggle="modal" data-bs-target="#shareModal"><i class="fas fa-share-alt"></i> Share</button>
         <button id="fullscreen-btn" class="btn-drawing btn-drawing-secondary"><i class="fas fa-expand"></i> Fullscreen</button>
         <button id="save-btn" class="btn-drawing btn-drawing-primary"><i class="fas fa-save"></i> Save Changes</button>
@@ -308,6 +312,7 @@
     // --- SocketIO Collaboration Logic ---
     const socket = io();
     const DRAWING_ID = {{ drawing.id }};
+    let isLive = false;
 
     // Join drawing room immediately to receive updates from others
     socket.emit('join_drawing', { drawing_id: DRAWING_ID });
@@ -315,6 +320,22 @@
     // Ensure we leave room properly
     window.addEventListener('beforeunload', () => {
         socket.emit('leave_drawing', { drawing_id: DRAWING_ID });
+    });
+
+    const liveBtn = document.getElementById('live-btn');
+    liveBtn.addEventListener('click', () => {
+        isLive = !isLive;
+        if (isLive) {
+            liveBtn.classList.remove('btn-drawing-primary');
+            liveBtn.classList.add('btn-drawing-secondary');
+            liveBtn.innerHTML = '<i class="fas fa-stop-circle text-danger"></i> Stop Live Session';
+            showToast('Live Session Started. Sharing updates...', 'success');
+        } else {
+            liveBtn.classList.remove('btn-drawing-secondary');
+            liveBtn.classList.add('btn-drawing-primary');
+            liveBtn.innerHTML = '<i class="fas fa-broadcast-tower"></i> Go Live';
+            showToast('Live Session Stopped.', 'info');
+        }
     });
 
     // --- Excalidraw Logic ---
@@ -532,19 +553,24 @@
                         lastSavedRef.current = dataStr;
                         debouncedSave();
 
-                        // Broadcast to peers
-                        socket.emit('client_update', {
-                            drawing_id: DRAWING_ID,
-                            elements: elements,
-                            appState: appState
-                        });
+                        // If live, broadcast to peers
+                        if (isLive) {
+                            socket.emit('client_update', {
+                                drawing_id: DRAWING_ID,
+                                elements: elements,
+                                appState: appState
+                            });
+                        }
                     }
                 },
                 onPointerUpdate: (payload) => {
                     // Optional: emit pointer updates
                 },
                 name: "Excalidraw Drawing - {{ drawing.name }}", // Note: This might not auto-update inside the React component if the scope name changes, but that's fine for now.
-                UIOptions: { canvasActions: { loadScene: false, export: false } }
+                UIOptions: {
+                    canvasActions: { loadScene: false, export: false },
+                    dockedSidebarBreakpoint: 0 // Prevents the sidebar from docking
+                }
             })
         );
     }
