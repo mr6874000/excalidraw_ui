@@ -34,7 +34,7 @@ jobs:
       - name: Build and Push Image
         run: |
           # Extract branch and versioning
-          BRANCH_NAME=$(echo "${{ github.ref }}" | sed 's|refs/heads/||' | tr '[:upper:]' '[:lower:]')
+          BRANCH_NAME=$(echo "${{ github.ref }}" | sed 's|refs/heads/||' | sed 's|/|-|g' | tr '[:upper:]' '[:lower:]')
           VERSION="$BRANCH_NAME-${{ github.run_number }}"
           
           # Full Image Path: ghcr.io/owner/repository
