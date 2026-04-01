@@ -52,6 +52,12 @@
         color: white;
     }
 
+    .btn-drawing-primary:disabled {
+        background-color: #6c757d;
+        cursor: not-allowed;
+        opacity: 0.65;
+    }
+
     .btn-drawing-secondary {
         background-color: #f8f9fa;
         color: #333;
@@ -103,7 +109,7 @@
     <div class="header-tools">
         <button id="share-btn" class="btn-drawing btn-drawing-secondary" data-bs-toggle="modal" data-bs-target="#shareModal"><i class="fas fa-share-alt"></i> Share</button>
         <button id="fullscreen-btn" class="btn-drawing btn-drawing-secondary"><i class="fas fa-expand"></i> Fullscreen</button>
-        <button id="save-btn" class="btn-drawing btn-drawing-primary"><i class="fas fa-save"></i> Save Changes</button>
+        <button id="save-btn" class="btn-drawing btn-drawing-primary" disabled><i class="fas fa-save"></i> Save Changes</button>
     </div>
 
     <div id="root"></div>
@@ -418,6 +424,8 @@
                     statusEl.innerText = ""; // Clear text status
                     statusEl.style.display = "none";
                     isDirtyRef.current = false;
+                    const saveBtn = document.getElementById('save-btn');
+                    if (saveBtn) saveBtn.disabled = true;
                     showToast('Drawing saved!', 'success');
                 } else {
                     statusEl.innerText = "Error saving!";
@@ -481,6 +489,8 @@
                     if (dataStr !== lastSavedRef.current) {
                         isDirtyRef.current = true;
                         lastSavedRef.current = dataStr;
+                        const saveBtn = document.getElementById('save-btn');
+                        if (saveBtn) saveBtn.disabled = false;
                         debouncedSave();
                     }
                 },
