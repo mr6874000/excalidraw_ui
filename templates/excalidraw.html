@@ -67,28 +67,36 @@
     .excalidraw .App-menu_top__left {
         display: none !important;
     }
+
+    /* Hide Excalidraw Library Button */
+    .excalidraw .App-toolbar__extra,
+    .excalidraw .layer-ui__library,
+    .excalidraw [aria-label="Library"],
+    .excalidraw .sidebar-trigger {
+        display: none !important;
+    }
 </style>
+
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="{{ url_for('index') }}">Home</a></li>
+        <li class="breadcrumb-item active" aria-current="page">{{ drawing.name }}</li>
+    </ol>
+</nav>
 
 <div class="d-flex justify-content-between align-items-center mb-3">
     <div>
-        <h2 class="mb-0">
-            <i class="fas fa-pen-fancy me-2"></i>Whiteboard
-            <span id="save-status" class="ms-3 text-muted align-middle"
-                style="font-size: 0.6em; font-weight: normal; display: none;"></span>
-        </h2>
-        <div class="d-flex align-items-center">
-            <p class="text-muted mb-0 me-2">Brainstorming session for</p>
+        <h2 class="mb-0 d-flex align-items-center">
             <div id="name-container">
                 <strong id="drawing-name-display" style="cursor: pointer; border-bottom: 1px dashed #ccc;"
                     title="Double-click to edit name">{{ drawing.name }}</strong>
                 <input type="text" id="drawing-name-input" class="form-control form-control-sm"
-                    style="display: none; width: auto; max-width: 300px;" value="{{ drawing.name }}">
+                    style="display: none; width: auto; max-width: 300px; font-size: 1.5rem; font-weight: 500;" value="{{ drawing.name }}">
             </div>
-        </div>
+            <span id="save-status" class="ms-3 text-muted align-middle"
+                style="font-size: 0.4em; font-weight: normal; display: none;"></span>
+        </h2>
     </div>
-    <a href="{{ url_for('excalidraw_list') }}" class="btn btn-outline-secondary">
-        <i class="fas fa-arrow-left"></i> Back to List
-    </a>
 </div>
 
 <div class="excalidraw-wrapper" id="excalidraw-wrapper">
@@ -477,7 +485,10 @@
                     }
                 },
                 name: "Excalidraw Drawing - {{ drawing.name }}", // Note: This might not auto-update inside the React component if the scope name changes, but that's fine for now.
-                UIOptions: { canvasActions: { loadScene: false, export: false } }
+                UIOptions: {
+                    canvasActions: { loadScene: false, export: false },
+                    dockedSidebarBreakpoint: 0
+                }
             })
         );
     }
