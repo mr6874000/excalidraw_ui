@@ -62,6 +62,11 @@
         background-color: #e2e6ea;
         color: #333;
     }
+
+    /* Hide Excalidraw Hamburger Menu */
+    .excalidraw .App-menu_top__left {
+        display: none !important;
+    }
 </style>
 
 <div class="d-flex justify-content-between align-items-center mb-3">
@@ -86,12 +91,42 @@
     </a>
 </div>
 
-<div class="excalidraw-wrapper">
+<div class="excalidraw-wrapper" id="excalidraw-wrapper">
     <div class="header-tools">
+        <button id="share-btn" class="btn-drawing btn-drawing-secondary" data-bs-toggle="modal" data-bs-target="#shareModal"><i class="fas fa-share-alt"></i> Share</button>
+        <button id="fullscreen-btn" class="btn-drawing btn-drawing-secondary"><i class="fas fa-expand"></i> Fullscreen</button>
         <button id="save-btn" class="btn-drawing btn-drawing-primary"><i class="fas fa-save"></i> Save Changes</button>
     </div>
 
     <div id="root"></div>
+
+    <!-- Share Modal (Inside wrapper for fullscreen support) -->
+    <div class="modal fade" id="shareModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Share Drawing</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-check form-switch mb-3">
+                        <input class="form-check-input" type="checkbox" id="readonlyToggle" checked>
+                        <label class="form-check-label" for="readonlyToggle">Read-only link</label>
+                    </div>
+                    <div class="input-group">
+                        <input type="text" class="form-control" id="shareLink" readonly>
+                        <button class="btn btn-outline-secondary" type="button" id="copyLinkBtn">
+                            <i class="fas fa-copy"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Toast Container -->
     <div class="toast-container position-fixed bottom-0 end-0 p-3" style="z-index: 1050">
         <div id="saveToast" class="toast align-items-center text-white border-0" role="alert" aria-live="assertive"
@@ -106,6 +141,7 @@
         </div>
     </div>
 </div>
+
 {% endblock %}
 
 {% block scripts %}
@@ -198,6 +234,70 @@
 
     nameInput.addEventListener('blur', saveName);
 
+
+    // --- Fullscreen Logic ---
+    const fullscreenBtn = document.getElementById('fullscreen-btn');
+    const wrapper = document.getElementById('excalidraw-wrapper');
+
+    fullscreenBtn.addEventListener('click', () => {
+        if (!document.fullscreenElement) {
+            if (wrapper.requestFullscreen) {
+                wrapper.requestFullscreen();
+            } else if (wrapper.webkitRequestFullscreen) { /* Safari */
+                wrapper.webkitRequestFullscreen();
+            } else if (wrapper.msRequestFullscreen) { /* IE11 */
+                wrapper.msRequestFullscreen();
+            }
+        } else {
+            if (document.exitFullscreen) {
+                document.exitFullscreen();
+            } else if (document.webkitExitFullscreen) { /* Safari */
+                document.webkitExitFullscreen();
+            } else if (document.msExitFullscreen) { /* IE11 */
+                document.msExitFullscreen();
+            }
+        }
+    });
+
+    document.addEventListener('fullscreenchange', () => {
+        if (document.fullscreenElement) {
+            fullscreenBtn.innerHTML = '<i class="fas fa-compress"></i> Exit Fullscreen';
+        } else {
+            fullscreenBtn.innerHTML = '<i class="fas fa-expand"></i> Fullscreen';
+        }
+    });
+
+    // --- Share Logic ---
+    const shareModal = document.getElementById('shareModal');
+    if (shareModal) {
+        const readonlyToggle = document.getElementById('readonlyToggle');
+        const shareLinkInput = document.getElementById('shareLink');
+        const readonlyUrl = window.location.origin + '{{ url_for("view_excalidraw_readonly", id=drawing.id) }}';
+        const editUrl = window.location.origin + '{{ url_for("view_excalidraw", id=drawing.id) }}';
+
+        function updateLink() {
+            shareLinkInput.value = readonlyToggle.checked ? readonlyUrl : editUrl;
+        }
+
+        readonlyToggle.addEventListener('change', updateLink);
+
+        const copyLinkBtn = document.getElementById('copyLinkBtn');
+        copyLinkBtn.addEventListener('click', () => {
+            shareLinkInput.select();
+            shareLinkInput.setSelectionRange(0, 99999); // For mobile devices
+            navigator.clipboard.writeText(shareLinkInput.value).then(() => {
+                const originalHtml = copyLinkBtn.innerHTML;
+                copyLinkBtn.innerHTML = '<i class="fas fa-check"></i>';
+                setTimeout(() => {
+                    copyLinkBtn.innerHTML = originalHtml;
+                }, 2000);
+            });
+        });
+
+        shareModal.addEventListener('show.bs.modal', function () {
+            updateLink(); // Set initial value when opened based on current toggle state
+        });
+    }
 
     // --- Excalidraw Logic ---
 
@@ -377,7 +477,7 @@
                     }
                 },
                 name: "Excalidraw Drawing - {{ drawing.name }}", // Note: This might not auto-update inside the React component if the scope name changes, but that's fine for now.
-                UIOptions: { canvasActions: { loadScene: false } }
+                UIOptions: { canvasActions: { loadScene: false, export: false } }
             })
         );
     }

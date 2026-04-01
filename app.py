@@ -12,6 +12,7 @@ from flask import (
 )
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import inspect
+from sqlalchemy.orm.attributes import flag_modified
 
 # Get the absolute path for the directory where app.py is located
 basedir = os.path.abspath(os.path.dirname(__file__))
@@ -278,6 +279,30 @@ def create_excalidraw():
         flash(f'Error creating drawing: {e}', 'error')
         return redirect(url_for('excalidraw_list'))
 
+@app.route('/excalidraw/<int:id>/rename', methods=['POST'])
+def rename_excalidraw(id):
+    """Renames an Excalidraw drawing."""
+    drawing = db.get_or_404(Excalidraw, id)
+    new_name = request.form.get('name')
+    if new_name:
+        try:
+            # Update the JSON payload where 'name' is stored
+            current_data = drawing.data.copy()
+            current_data['name'] = new_name
+            drawing.data = current_data
+
+            from sqlalchemy.orm.attributes import flag_modified
+            flag_modified(drawing, "data")
+
+            db.session.commit()
+            flash(f'Drawing renamed to "{new_name}" successfully.', 'success')
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Error renaming drawing: {e}', 'error')
+    else:
+        flash('New name cannot be empty.', 'error')
+    return redirect(url_for('excalidraw_list'))
+
 @app.route('/excalidraw/<int:id>/delete', methods=['POST'])
 def delete_excalidraw(id):
     """Deletes an Excalidraw drawing."""
@@ -410,7 +435,6 @@ def save_excalidraw_data(id):
         
         # Explicitly mark the field as modified because it's a JSON type
         # (SQLAlchemy often detects this, but explicit flag is safer for mutations of mutable objects)
-        from sqlalchemy.orm.attributes import flag_modified
         flag_modified(drawing, "data")
         
         db.session.commit()

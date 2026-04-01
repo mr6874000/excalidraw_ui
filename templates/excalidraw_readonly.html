@@ -17,6 +17,41 @@
         height: 100%;
         width: 100%;
     }
+
+        .header-tools {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            z-index: 10;
+        }
+
+        .btn-drawing {
+            padding: 6px 12px;
+            border-radius: 4px;
+            border: none;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 14px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            text-decoration: none;
+            display: inline-block;
+        }
+
+        .btn-drawing-secondary {
+            background-color: #f8f9fa;
+            color: #333;
+            border: 1px solid #ddd;
+        }
+
+        .btn-drawing-secondary:hover {
+            background-color: #e2e6ea;
+            color: #333;
+        }
+
+        /* Hide Excalidraw Hamburger Menu */
+        .excalidraw .App-menu_top__left {
+            display: none !important;
+        }
 </style>
 
 <div class="d-flex justify-content-between align-items-center mb-3">
@@ -29,7 +64,10 @@
     </a>
 </div>
 
-<div class="excalidraw-wrapper">
+    <div class="excalidraw-wrapper" id="excalidraw-wrapper">
+        <div class="header-tools">
+            <button id="fullscreen-btn" class="btn-drawing btn-drawing-secondary"><i class="fas fa-expand"></i> Fullscreen</button>
+        </div>
     <div id="root"></div>
 </div>
 {% endblock %}
@@ -44,6 +82,38 @@
 <script crossorigin src="{{ url_for('static', filename='vendor/excalidraw.production.min.js') }}"></script>
 
 <script>
+    // --- Fullscreen Logic ---
+    const fullscreenBtn = document.getElementById('fullscreen-btn');
+    const wrapper = document.getElementById('excalidraw-wrapper');
+
+    fullscreenBtn.addEventListener('click', () => {
+        if (!document.fullscreenElement) {
+            if (wrapper.requestFullscreen) {
+                wrapper.requestFullscreen();
+            } else if (wrapper.webkitRequestFullscreen) { /* Safari */
+                wrapper.webkitRequestFullscreen();
+            } else if (wrapper.msRequestFullscreen) { /* IE11 */
+                wrapper.msRequestFullscreen();
+            }
+        } else {
+            if (document.exitFullscreen) {
+                document.exitFullscreen();
+            } else if (document.webkitExitFullscreen) { /* Safari */
+                document.webkitExitFullscreen();
+            } else if (document.msExitFullscreen) { /* IE11 */
+                document.msExitFullscreen();
+            }
+        }
+    });
+
+    document.addEventListener('fullscreenchange', () => {
+        if (document.fullscreenElement) {
+            fullscreenBtn.innerHTML = '<i class="fas fa-compress"></i> Exit Fullscreen';
+        } else {
+            fullscreenBtn.innerHTML = '<i class="fas fa-expand"></i> Fullscreen';
+        }
+    });
+
     const { useState, useEffect } = React;
     const ExcalidrawLib = window.ExcalidrawLib || null;
     const Excalidraw = ExcalidrawLib ? ExcalidrawLib.Excalidraw : null;
