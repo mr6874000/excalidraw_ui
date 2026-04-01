@@ -48,6 +48,11 @@
                                 </a>
                             </li>
                             <li>
+                                <button class="dropdown-item btn btn-link text-start" data-bs-toggle="modal" data-bs-target="#renameModal" data-drawing-id="{{ drawing.id }}" data-drawing-name="{{ drawing.name }}">
+                                    <i class="fas fa-pencil-alt fa-fw me-2"></i>Rename
+                                </button>
+                            </li>
+                            <li>
                                 <a class="dropdown-item" href="{{ url_for('view_excalidraw_readonly', id=drawing.id) }}" target="_blank">
                                     <i class="fas fa-eye fa-fw me-2"></i>View Read-Only
                                 </a>
@@ -104,6 +109,30 @@
     </div>
 </div>
 
+<!-- Rename Modal -->
+<div class="modal fade" id="renameModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Rename Drawing</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="renameForm" method="POST">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="renameName" class="form-label">New Name</label>
+                        <input type="text" class="form-control" id="renameName" name="name" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Rename</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <!-- Create Modal -->
 <div class="modal fade" id="createModal" tabindex="-1">
     <div class="modal-dialog">
@@ -134,6 +163,22 @@
 
 {% block scripts %}
 <script>
+    // Rename Modal Population
+    const renameModal = document.getElementById('renameModal');
+    if (renameModal) {
+        renameModal.addEventListener('show.bs.modal', function (event) {
+            const button = event.relatedTarget;
+            const drawingId = button.getAttribute('data-drawing-id');
+            const drawingName = button.getAttribute('data-drawing-name');
+
+            const form = document.getElementById('renameForm');
+            form.action = `/excalidraw/${drawingId}/rename`;
+
+            const nameInput = document.getElementById('renameName');
+            nameInput.value = drawingName;
+        });
+    }
+
     // Search functionality
     document.getElementById('searchInput').addEventListener('keyup', function () {
         const query = this.value.toLowerCase();
